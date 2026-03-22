@@ -1,65 +1,100 @@
-import Image from "next/image";
+import React from 'react';
+
+const JurisHero = () => (
+  <section className="relative min-h-screen flex items-center justify-center pt-20 overflow-hidden bg-gradient-mesh">
+    {/* Decorative Blobs */}
+    <div className="absolute top-1/4 -left-20 w-72 h-72 bg-primary/20 rounded-full blur-[100px] animate-pulse" />
+    <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-accent/20 rounded-full blur-[100px] animate-pulse delay-1000" />
+
+    <div className="container mx-auto px-6 relative z-10 text-center">
+      <div className="inline-block px-4 py-1.5 mb-6 text-sm font-medium tracking-wide text-primary uppercase glass rounded-full">
+        The Future of Justice
+      </div>
+      <h1 className="text-6xl md:text-8xl font-bold mb-8 tracking-tighter leading-none">
+        Legal Intelligence <br />
+        <span className="text-shimmer">Redefined.</span>
+      </h1>
+      <p className="max-w-2xl mx-auto text-xl text-slate-400 mb-10 leading-relaxed">
+        Juris leverages state-of-the-art neural networks to analyze case law, predict outcomes, and automate document generation for the modern legal firm.
+      </p>
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <button className="px-8 py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all shadow-xl shadow-primary/20 hover:scale-105 active:scale-95">
+          Request Early Access
+        </button>
+        <button className="px-8 py-4 glass text-white font-semibold rounded-xl transition-all hover:bg-white/10">
+          Watch Showcase
+        </button>
+      </div>
+    </div>
+  </section>
+);
+
+const FeatureCard = ({ title, description, icon }: { title: string; description: string; icon: string }) => (
+  <div className="glass p-8 rounded-2xl glass-hover transition-all duration-300">
+    <div className="w-12 h-12 mb-6 bg-primary/20 rounded-lg flex items-center justify-center text-primary text-2xl font-bold">
+      {icon}
+    </div>
+    <h3 className="text-2xl font-bold mb-4">{title}</h3>
+    <p className="text-slate-400 leading-relaxed">
+      {description}
+    </p>
+  </div>
+);
+
+const JurisServices = () => (
+  <section className="py-24 bg-background">
+    <div className="container mx-auto px-6">
+      <div className="text-center mb-20">
+        <h2 className="text-4xl md:text-5xl font-bold mb-6">Expertise at Scale</h2>
+        <p className="max-w-xl mx-auto text-slate-400">
+          Our platform combines human expertise with algorithmic precision to deliver unmatched legal results.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <FeatureCard
+          icon="A"
+          title="Case Neural Analysis"
+          description="Instant scanning of millions of legal documents to find the needle in the haystack."
+        />
+        <FeatureCard
+          icon="P"
+          title="Predictive Analytics"
+          description="Data-driven insights on judge behavior and settlement probabilities."
+        />
+        <FeatureCard
+          icon="G"
+          title="Generative Drafting"
+          description="Automated drafting of complex legal briefs with pinpoint accuracy."
+        />
+      </div>
+    </div>
+  </section>
+);
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen bg-background text-foreground">
+      {/* Navbar placeholder */}
+      <nav className="fixed top-0 w-full z-50 glass border-x-0 border-t-0 py-4 px-6 flex justify-between items-center">
+        <div className="text-2xl font-black tracking-tighter">JURIS.</div>
+        <div className="hidden md:flex gap-8 text-sm font-medium text-slate-300">
+          <a href="#" className="hover:text-primary transition-colors">Technology</a>
+          <a href="#" className="hover:text-primary transition-colors">Solutions</a>
+          <a href="#" className="hover:text-primary transition-colors">Security</a>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        <button className="px-5 py-2 bg-white text-black text-sm font-bold rounded-lg hover:bg-slate-200 transition-colors">
+          Contact
+        </button>
+      </nav>
+
+      <JurisHero />
+      <JurisServices />
+
+      {/* Footer */}
+      <footer className="py-12 border-t border-white/10 bg-background text-center text-slate-500 text-sm">
+        <div className="mb-4 text-foreground font-bold tracking-tighter">JURIS.</div>
+        <p>&copy; 2026 Juris AI Technologies. All rights reserved.</p>
+      </footer>
+    </main>
   );
 }
