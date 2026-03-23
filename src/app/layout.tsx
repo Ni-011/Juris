@@ -17,6 +17,9 @@ const playfair = Playfair_Display({
 export const metadata: Metadata = {
   title: "Juris - AI Legal Research Assistant",
   description: "Advanced AI-powered legal document analysis and research.",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

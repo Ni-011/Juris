@@ -27,10 +27,19 @@ export default function Home() {
   const [files, setFiles] = React.useState<{ name: string, type: string }[]>([]);
   const [isDragging, setIsDragging] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   const [messages, setMessages] = React.useState<{ id: string, role: 'user' | 'assistant', content: string }[]>([]);
   const [input, setInput] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  React.useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleSendMessage = async () => {
     if (!input.trim() && files.length === 0) return;
@@ -149,21 +158,21 @@ export default function Home() {
             className="gap-1.5 text-slate-500 hover:text-slate-900 h-8 text-[12px] font-semibold px-2 transition-all hover:bg-slate-200/50 cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
-            {mode === 'landing' ? 'Files' : ''}
+            {mode === 'landing' ? <span className="hidden sm:inline">Files</span> : ''}
           </Button>
           {mode === 'landing' && (
             <>
               <Button variant="ghost" size="sm" className="gap-1.5 text-slate-500 hover:text-slate-900 h-8 text-[12px] font-semibold px-2 transition-all hover:bg-slate-200/50 cursor-pointer">
                 <Zap className="h-3.5 w-3.5" />
-                Focus
+                <span className="hidden sm:inline">Focus</span>
               </Button>
               <Button variant="ghost" size="sm" className="gap-1.5 text-slate-500 hover:text-slate-900 h-8 text-[12px] font-semibold px-2 transition-all hover:bg-slate-200/50 cursor-pointer">
                 <LayoutGrid className="h-3.5 w-3.5" />
-                Prompts
+                <span className="hidden sm:inline">Prompts</span>
               </Button>
               <Button variant="ghost" size="sm" className="gap-1.5 text-slate-500 hover:text-slate-900 h-8 text-[12px] font-semibold px-2 transition-all hover:bg-slate-200/50 cursor-pointer">
                 <Sparkles className="h-3.5 w-3.5" />
-                Improve
+                <span className="hidden sm:inline">Improve</span>
               </Button>
             </>
           )}
@@ -185,8 +194,8 @@ export default function Home() {
             disabled={isLoading || (!input.trim() && files.length === 0)}
             className={`bg-slate-900 hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md cursor-pointer ${mode === 'landing' ? 'h-9 px-6 text-[13px]' : 'h-8 px-4 text-[12px]'}`}
           >
-            <ArrowUp className="h-4 w-4 mr-2" />
-            {mode === 'landing' ? 'Ask Juris' : 'Send'}
+            <ArrowUp className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">{mode === 'landing' ? 'Ask Juris' : 'Send'}</span>
           </Button>
         </div>
       </div>
@@ -214,22 +223,22 @@ export default function Home() {
             />
           </div>
 
-          <div className="flex gap-3 items-center">
+          <div className="flex gap-2 sm:gap-3 items-center">
             <Button
               variant="outline"
               size="sm"
-              className="gap-2 text-[12px] font-semibold text-slate-700 bg-white border-slate-200 h-8 rounded-lg px-3 transition-all hover:scale-105 hover:shadow-sm active:scale-95 cursor-pointer"
+              className="gap-2 text-[12px] font-semibold text-slate-700 bg-white border-slate-200 h-8 rounded-lg px-2 sm:px-3 transition-all hover:scale-105 hover:shadow-sm active:scale-95 cursor-pointer"
             >
               <MessageSquare className="h-3.5 w-3.5 text-slate-400" />
-              View shared threads
+              <span className="hidden sm:inline">View shared threads</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="gap-2 text-[12px] font-semibold text-slate-700 bg-white border-slate-200 h-8 rounded-lg px-3 transition-all hover:scale-105 hover:shadow-sm active:scale-95 cursor-pointer"
+              className="gap-2 text-[12px] font-semibold text-slate-700 bg-white border-slate-200 h-8 rounded-lg px-2 sm:px-3 transition-all hover:scale-105 hover:shadow-sm active:scale-95 cursor-pointer"
             >
               <Zap className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />
-              Tips
+              <span className="hidden sm:inline">Tips</span>
             </Button>
           </div>
         </div>
@@ -275,17 +284,17 @@ export default function Home() {
                   exit={{ opacity: 0, scale: 0.95 }}
                   className="w-full max-w-[760px] mx-auto flex flex-col items-center text-center px-6"
                 >
-                  <h1 className="text-7xl font-serif font-medium mb-4 tracking-tight text-slate-900">
+                  <h1 className="text-5xl md:text-7xl font-serif font-medium mb-4 tracking-tight text-slate-900">
                     Juris
                   </h1>
-                  <p className="text-xl text-slate-500 font-medium mb-2">How can I help you today?</p>
+                  <p className="text-lg md:text-xl text-slate-500 font-medium mb-2">How can I help you today?</p>
                 </motion.div>
               ) : (
                 <motion.div
                   key="chat-history"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="w-full max-w-[760px] mx-auto flex flex-col gap-8 px-6"
+                  className="w-full max-w-[760px] mx-auto flex flex-col gap-8 px-4 sm:px-6"
                 >
                   {messages.map((msg) => (
                     <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
@@ -306,6 +315,7 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
+                  <div ref={messagesEndRef} />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -315,7 +325,7 @@ export default function Home() {
             layout
             initial={false}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className={`w-full shrink-0 z-20 flex justify-center px-6 bg-transparent ${messages.length === 0 ? '' : 'py-4'}`}
+            className={`w-full shrink-0 z-20 flex justify-center px-4 sm:px-6 bg-transparent ${messages.length === 0 ? '' : 'py-4'}`}
           >
             <div className="w-full max-w-[760px]">
               {renderChatInput(messages.length === 0 ? 'landing' : 'chat')}
