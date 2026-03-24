@@ -14,7 +14,10 @@ import {
   FileText,
   ArrowUp,
   ChevronDown,
-  Sparkles
+  Sparkles,
+  ExternalLink,
+  BookOpen,
+  Scale
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -22,6 +25,85 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
+
+// Premium Sequential Loader representing the legal research process
+const SequentialLoader = () => {
+  const [step, setStep] = React.useState(0);
+  const steps = [
+    { text: "Analyzing case context...", icon: <Search className="h-4 w-4" /> },
+    { text: "Identifying legal issues...", icon: <Scale className="h-4 w-4" /> },
+    { text: "Hunting for precedents (Vaquill AI)...", icon: <Zap className="h-4 w-4" /> },
+    { text: "Generating argument strategy...", icon: <Sparkles className="h-4 w-4" /> },
+    { text: "Finalizing legal partner briefing...", icon: <Briefcase className="h-4 w-4" /> }
+  ];
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setStep((prev) => (prev < steps.length - 1 ? prev + 1 : prev));
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [steps.length]);
+
+  return (
+    <div className="flex flex-col gap-4 py-4 w-full max-w-sm">
+      <div className="flex items-center gap-3">
+        <div className="relative flex items-center justify-center">
+          <div className="h-10 w-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, scale: 0.8, rotate: -10 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0.8, rotate: 10 }}
+                transition={{ duration: 0.4, ease: "backOut" }}
+              >
+                {steps[step].icon}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+            className="absolute inset-0 rounded-xl border-2 border-t-indigo-500 border-r-transparent border-b-transparent border-l-transparent opacity-40"
+          />
+        </div>
+        <div className="flex flex-col">
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={step}
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              className="text-sm font-semibold text-slate-700 tracking-tight"
+            >
+              {steps[step].text}
+            </motion.span>
+          </AnimatePresence>
+          <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest mt-0.5">
+            Juris Research Engine v3.1
+          </span>
+        </div>
+      </div>
+
+      <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+        <motion.div
+          className="h-full bg-indigo-500 rounded-full"
+          initial={{ width: "0%" }}
+          animate={{ width: `${((step + 1) / steps.length) * 100}%` }}
+          transition={{ duration: 0.8, ease: "circOut" }}
+        />
+      </div>
+    </div>
+  );
+};
+
+// Helper to process citations in the format [[n]] into links for ReactMarkdown
+const processCitations = (content: string) => {
+  return content.replace(/\[\[(\d+)\]\]/g, (match, n) => {
+    return ` [${n}](#cite-${n})`;
+  });
+};
 
 export default function Home() {
   const [files, setFiles] = React.useState<{ name: string, type: string }[]>([]);
@@ -29,17 +111,26 @@ export default function Home() {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
-  const [messages, setMessages] = React.useState<{ id: string, role: 'user' | 'assistant', content: string }[]>([]);
+  const [messages, setMessages] = React.useState<{ id: string, role: 'user' | 'assistant', content: string, metadata?: any }[]>([]);
   const [input, setInput] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesEndRef.current) {
+      const scrollContainer = messagesEndRef.current.parentElement?.parentElement;
+      if (scrollContainer) {
+        scrollContainer.scrollTo({
+          top: scrollContainer.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    }
   };
 
   React.useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const timeoutId = setTimeout(scrollToBottom, 50);
+    return () => clearTimeout(timeoutId);
+  }, [messages, isLoading]);
 
   const handleSendMessage = async () => {
     if (!input.trim() && files.length === 0) return;
@@ -63,23 +154,42 @@ export default function Home() {
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
+      let buffer = "";
 
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const text = decoder.decode(value, { stream: true });
 
-          setMessages(prev => prev.map(msg =>
-            msg.id === assistantId ? { ...msg, content: msg.content + text } : msg
-          ));
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const data = JSON.parse(line);
+
+              if (data.t) {
+                setMessages(prev => prev.map(msg =>
+                  msg.id === assistantId ? { ...msg, content: msg.content + data.t } : msg
+                ));
+              } else if (data.m) {
+                setMessages(prev => prev.map(msg =>
+                  msg.id === assistantId ? { ...msg, metadata: data.m } : msg
+                ));
+              }
+            } catch (e) {
+              console.error("Failed to parse stream JSON:", e, "Line:", line);
+            }
+          }
         }
       }
     } catch (error) {
       console.error("Error sending message:", error);
     } finally {
       setIsLoading(false);
-      setFiles([]); // Clear files after sending for prototype
+      setFiles([]);
     }
   };
 
@@ -131,7 +241,7 @@ export default function Home() {
                     onClick={() => setFiles(f => f.filter((_, idx) => idx !== i))}
                     className="absolute top-1.5 right-1.5 h-5 w-5 bg-white border border-slate-200 rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-all hover:bg-red-50 hover:text-red-500 hover:border-red-200 z-10"
                   >
-                    <Plus className="h-3 w-3 rotate-45" />
+                    <Plus className="h-3.5 w-3.5 rotate-45" />
                   </button>
                 </div>
               ))}
@@ -143,7 +253,7 @@ export default function Home() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask Juris anything..."
+          placeholder="Ask Juris anything about Indian Law..."
           className={`w-full resize-none border-none focus:ring-0 bg-transparent text-slate-800 text-[16px] placeholder:text-slate-400 outline-none leading-relaxed transition-all duration-300 ${mode === 'landing' ? 'min-h-[100px]' : 'min-h-[24px] max-h-32'}`}
           rows={mode === 'landing' ? 4 : 1}
         />
@@ -296,25 +406,139 @@ export default function Home() {
                   animate={{ opacity: 1 }}
                   className="w-full max-w-[760px] mx-auto flex flex-col gap-8 px-4 sm:px-6"
                 >
-                  {messages.map((msg) => (
-                    <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      <div className={`px-4 py-3 rounded-2xl max-w-[85%] text-[15px] leading-relaxed ${msg.role === 'user' ? 'bg-slate-100 text-slate-900 rounded-br-sm' : 'bg-transparent text-slate-800'}`}>
-                        {msg.role === 'assistant' && <div className="font-bold text-slate-900 mb-2 flex items-center gap-2"><div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white font-serif text-[10px]">J</div> Juris</div>}
-                        <div className="markdown-prose">
-                          {msg.role === 'assistant' ? (
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {msg.content}
-                            </ReactMarkdown>
-                          ) : (
-                            <p className="whitespace-pre-wrap">{msg.content}</p>
-                          )}
-                          {isLoading && msg.role === 'assistant' && msg.content === '' && (
-                            <span className="animate-pulse">Thinking...</span>
-                          )}
+                  <TooltipProvider delay={200}>
+                    {messages.map((msg) => (
+                      <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                        <div className={`px-4 py-3 rounded-2xl max-w-[85%] text-[15px] leading-relaxed ${msg.role === 'user' ? 'bg-slate-100 text-slate-900 rounded-br-sm' : 'bg-transparent text-slate-800'}`}>
+                          {msg.role === 'assistant' && <div className="font-bold text-slate-900 mb-2 flex items-center gap-2"><div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white font-serif text-[10px]">J</div> Juris</div>}
+                          <div className="markdown-prose">
+                            {msg.role === 'assistant' ? (
+                              <>
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  components={{
+                                    // Intercept citation links to render custom Tooltips
+                                    a: ({ node, href, children, ...props }) => {
+                                      if (href && href.startsWith('#cite-')) {
+                                        const chunkPart = href.replace('#cite-', '');
+                                        const chunkIdx = parseInt(chunkPart, 10) - 1;
+
+                                        const chunk = msg.metadata?.groundingChunks?.[chunkIdx];
+                                        if (!chunk) return <a href={href} {...props}>{children}</a>;
+
+                                        const fullText = chunk.retrievedContext?.text?.trim() || "";
+                                        const smartSnippet = fullText;
+
+                                        const isPrecedent = chunk.sourceType === 'precedent';
+                                        const ctx = chunk.retrievedContext || {};
+                                        const displayTitle = isPrecedent
+                                          ? (ctx.title || 'Case Precedent')
+                                          : (ctx.title?.replace('.pdf', '') || 'Statute');
+                                        const courtYearLine = isPrecedent
+                                          ? [ctx.court, ctx.year].filter(Boolean).join(' · ')
+                                          : '';
+                                        const judgesLine = isPrecedent && ctx.judges?.length
+                                          ? `Bench: ${ctx.judges.join(', ')}`
+                                          : '';
+
+                                        return (
+                                          <Tooltip>
+                                            <TooltipTrigger
+                                              className={`inline-flex items-center justify-center min-w-[20px] h-[20px] rounded-full ${isPrecedent ? 'bg-indigo-700 hover:bg-indigo-800' : 'bg-slate-800 hover:bg-slate-900'} text-white text-[10px] font-bold px-1.5 mx-1 align-super cursor-pointer shadow-sm transition-all`}
+                                            >
+                                              {children}
+                                            </TooltipTrigger>
+                                            <TooltipContent
+                                              side="top"
+                                              sideOffset={8}
+                                              className="flex flex-col gap-0 w-[550px] max-h-[500px] p-0 bg-white border border-slate-200 shadow-professional rounded-xl z-[100] overflow-hidden"
+                                            >
+                                              <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex flex-col gap-1 sticky top-0 z-10">
+                                                <div className="flex items-center justify-between">
+                                                  <div className="flex items-center gap-2">
+                                                    <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${isPrecedent ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                      {isPrecedent ? 'Precedent' : 'Statute'}
+                                                    </span>
+                                                    <span className="text-[13px] font-bold text-slate-900 truncate tracking-tight max-w-[380px]">
+                                                      {displayTitle}
+                                                    </span>
+                                                  </div>
+                                                  <div className="text-[11px] font-bold text-slate-400 uppercase shrink-0">
+                                                    [[{chunkPart}]]
+                                                  </div>
+                                                </div>
+                                                {(courtYearLine || ctx.citation) && (
+                                                  <div className="text-[11px] text-slate-500 font-medium flex items-center gap-2 pl-1">
+                                                    {courtYearLine && <span>{courtYearLine}</span>}
+                                                    {ctx.citation && <span className="text-slate-400">· {ctx.citation}</span>}
+                                                  </div>
+                                                )}
+                                                {judgesLine && (
+                                                  <div className="text-[10px] text-slate-400 font-medium pl-1">{judgesLine}</div>
+                                                )}
+                                              </div>
+                                              <div className="px-7 py-6 overflow-y-auto custom-scrollbar bg-white">
+                                                <div className="markdown-prose text-slate-700 text-[15px] leading-[1.7] font-serif">
+                                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                    {smartSnippet
+                                                      .replace(/\\n/g, '\n')
+                                                      .replace(/\\"/g, '"')
+                                                      .replace(/(Case|Court|Citation|Summary|Statute|Section|Analysis):/gi, '**$1:**')
+                                                    }
+                                                  </ReactMarkdown>
+                                                </div>
+                                              </div>
+                                              <div className="bg-slate-50/50 px-7 py-3 border-t border-slate-100 flex items-center justify-between mt-auto">
+                                                <span className="text-[11px] text-slate-400 font-medium tracking-tight">
+                                                  {isPrecedent ? 'Judicial Precedent · Vaquill AI' : 'Statutory Authority · Juris DB'}
+                                                </span>
+                                                <button
+                                                  onClick={() => {
+                                                    // Use direct PDF link from Vaquill if available
+                                                    if (ctx.pdfUrl) {
+                                                      window.open(ctx.pdfUrl, '_blank');
+                                                      return;
+                                                    }
+                                                    const title = ctx.title || "";
+                                                    const text = ctx.text || "";
+                                                    let searchUrl = "";
+                                                    if (title === "Statute") {
+                                                      const sectionMatch = text.match(/Section\s*(\d+)/i);
+                                                      const actMatch = text.match(/(BNS|BNSS|BSA|Constitution)/i);
+                                                      const query = `${sectionMatch ? sectionMatch[0] : ""} ${actMatch ? actMatch[0] : "BNS"}`.trim();
+                                                      searchUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(query || text.substring(0, 30))}`;
+                                                    } else {
+                                                      searchUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(title)}`;
+                                                    }
+                                                    window.open(searchUrl, '_blank');
+                                                  }}
+                                                  className="text-[11px] text-slate-900 font-bold hover:underline cursor-pointer flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded-md shadow-sm transition-all hover:border-slate-300"
+                                                >
+                                                  {ctx.pdfUrl ? 'View Judgment' : 'Full Document'} <ExternalLink className="h-3 w-3" />
+                                                </button>
+                                              </div>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        );
+                                      }
+                                      return <a href={href} className="text-blue-600 hover:underline" {...props}>{children}</a>;
+                                    }
+                                  }}
+                                >
+                                  {processCitations(msg.content)}
+                                </ReactMarkdown>
+                              </>
+                            ) : (
+                              <p className="whitespace-pre-wrap">{msg.content}</p>
+                            )}
+                            {isLoading && msg.role === 'assistant' && msg.content === '' && (
+                              <SequentialLoader />
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </TooltipProvider>
                   <div ref={messagesEndRef} />
                 </motion.div>
               )}
@@ -361,24 +585,4 @@ export default function Home() {
       </main>
     </div>
   );
-}
-
-function FolderIcon(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-      <path d="M2 10h20" />
-    </svg>
-  )
 }
