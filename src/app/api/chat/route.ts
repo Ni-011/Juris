@@ -17,35 +17,29 @@ const GROQ_FALLBACK = 'llama-3.3-70b-versatile';
 function repairJson(text: string): string {
     let clean = (text || '').trim();
 
-    // 1. Strip markdown backticks
     if (clean.includes('```')) {
         const match = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         if (match) clean = match[1].trim();
     }
 
-    // 2. Strip preambles: Find the first { and the last }
     const firstBrace = clean.indexOf('{');
     const lastBrace = clean.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
         clean = clean.substring(firstBrace, lastBrace + 1);
     } else if (firstBrace !== -1) {
-        // If no closing brace, at least start from the first brace
         clean = clean.substring(firstBrace);
     }
 
-    // 3. Fix common unterminated strings at the end of truncation
     const lastOpenQuote = clean.lastIndexOf('"');
     const lastCloseBrace = clean.lastIndexOf('}');
     const lastCloseBracket = clean.lastIndexOf(']');
     const maxClose = Math.max(lastCloseBrace, lastCloseBracket);
 
     if (lastOpenQuote > maxClose) {
-        // Simple attempt to close a string if it looks truncated
         if (!clean.endsWith('"')) clean += '"';
         if (clean.lastIndexOf('{') > clean.lastIndexOf('}')) clean += ' }';
     }
 
-    // 4. Balance braces/brackets
     const openBraces = (clean.match(/\{/g) || []).length;
     let closeBraces = (clean.match(/\}/g) || []).length;
     while (openBraces > closeBraces) {
@@ -54,7 +48,7 @@ function repairJson(text: string): string {
     }
 
     const openBrackets = (clean.match(/\[/g) || []).length;
-    let closeBrackets = (clean.match(/\ ]/g) || []).length;
+    let closeBrackets = (clean.match(/\]/g) || []).length;
     while (openBrackets > closeBrackets) {
         clean += ' ]';
         closeBrackets++;
@@ -124,9 +118,75 @@ async function generateWithFallback(
 
 export async function POST(req: Request) {
     try {
-        const { messages } = await req.json();
+        const { messages, isResearch } = await req.json();
         const userQuery = messages[messages.length - 1].content;
+        
+        // Use regex to dynamically strip out previously injected System Context blocks to save thousands of tokens 
+        // This removes the massive precedent dumps while preserving the final strategy text the Assistant actually output
+        const sanitizeContent = (content: string) => {
+            return content.replace(/\[SYSTEM CONTEXT - RESEARCH FOUND\]:[\s\S]*?\[MY STRATEGY\]:\n/g, '');
+        };
 
+        // Build a readable conversation history so the Analyzer/Strategy models understand the FULL context safely
+        const conversationHistory = messages.map((m: any) => `${m.role.toUpperCase()}: ${sanitizeContent(m.content)}`).join('\n\n---\n\n');
+
+        // --- FAST PATH: Conversational Follow-up (or explicit chat mode) ---
+        if (!isResearch) {
+            console.log(`[Chat API] Follow-up Chat Detected. Using ${GROQ_FALLBACK} for fast conversational response.`);
+
+            const responseStream = new ReadableStream({
+                async start(controller) {
+                    let streamClosed = false;
+                    const sendChunk = (data: any) => {
+                        if (streamClosed) return;
+                        try { controller.enqueue(new TextEncoder().encode(JSON.stringify(data) + "\n")); } catch (e) {}
+                    };
+                    const closeStream = () => {
+                        if (streamClosed) return;
+                        streamClosed = true;
+                        try { controller.close(); } catch (e) {}
+                    };
+
+                    try {
+                        const systemPrompt = { 
+                            role: 'system', 
+                            content: `You are Juris, an elite legal AI assistant. Answer follow-up questions directly using the conversational context. 
+Always cite sources exactly as [[n]] where n is the source number (e.g., [[1]]). 
+Do NOT hallucinate case laws.` 
+                        };
+                        
+                        // Pass all messages to retain context
+                        const recentSafeMessages = messages.map((m: any) => ({
+                            role: m.role,
+                            content: m.content
+                        }));
+
+                        const chatStream = await groq.chat.completions.create({
+                            model: GROQ_FALLBACK,
+                            messages: [systemPrompt, ...recentSafeMessages],
+                            stream: true,
+                        });
+
+                        for await (const chunk of chatStream) {
+                            const content = chunk.choices?.[0]?.delta?.content;
+                            if (content) sendChunk({ t: content });
+                        }
+                        
+                        closeStream();
+                    } catch (error: any) {
+                        console.error('[Chat API] Follow-up Chat failed:', error.message);
+                        sendChunk({ t: "\n\n⚠️ Juris is experiencing an issue processing the follow-up request." });
+                        closeStream();
+                    }
+                }
+            });
+
+            return new Response(responseStream, { 
+                headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' } 
+            });
+        }
+
+        // --- HEAVY PATH: Initial Research Pipeline ---
         console.log(`[Chat API] Incoming Request. Pipeline: ${ANALYZER_MODEL} -> ${SAFEGUARD_MODEL} -> ${STRATEGY_MODEL}`);
 
         const stream = new ReadableStream({
@@ -148,22 +208,22 @@ export async function POST(req: Request) {
 
                 try {
                     const analyzerPrompt = `Analyze the context for exhaustive CASE LAW research.
-Tasks:
-1. Provide a "detailed_legal_reasoning" field: Perform a step-by-step analysis of the legal issues, considering both statutory provisions and potential judicial interpretations.
-2. Identify primary legal issues.
-3. Generate ONE high-recall keyword search string for Landmark Precedents (using both new BNS and old IPC for recall).
+                                            Tasks:
+                                            1. Provide a "detailed_legal_reasoning" field: Perform a step-by-step analysis of the legal issues, considering both statutory provisions and potential judicial interpretations.
+                                            2. Identify primary legal issues.
+                                            3. Generate ONE high-recall keyword search string for Landmark Precedents (using both new BNS and old IPC for recall).
 
-Return ONLY JSON:
-{
-  "detailed_legal_reasoning": "Step-by-step legal analysis...",
-  "legal_issues": ["issue1"],
-  "precedent_search_keywords": "Search query for landmark X vs Y judgments"
-}`;
+                                            Return ONLY JSON using this exact schema:
+                                            - detailed_legal_reasoning (string, step-by-step analysis)
+                                            - legal_issues (array of strings)
+                                            - precedent_search_keywords (string)
+
+                                            JSON:`;
 
                     const analyzerText = await generateWithFallback(
                         [
                             { role: 'system', content: 'You are a senior legal analyst. Provide deep, step-by-step legal reasoning before structuring the search query. Respond ONLY with JSON.' },
-                            { role: 'user', content: analyzerPrompt + "\n\nCONTEXT:\n" + userQuery }
+                            { role: 'user', content: analyzerPrompt + "\n\nFULL CONVERSATION CONTEXT:\n" + conversationHistory }
                         ],
                         ANALYZER_MODEL,
                         'Analyzer',
@@ -175,28 +235,28 @@ Return ONLY JSON:
                     console.log(`[Chat API] Analyzer output:`, JSON.stringify(initialAnalysis, null, 2));
 
                     const safeguardPrompt = `Refine this Case Law search query for maximum judicial recall based on the provided legal analysis.
-Ensure it targets Supreme Court and High Court judgments effectively.
+                        Ensure it targets Supreme Court and High Court judgments effectively.
 
-LEGAL ISSUES:
-${initialAnalysis.legal_issues?.join(', ') || 'General legal research'}
+                        LEGAL ISSUES:
+                        ${initialAnalysis.legal_issues?.join(', ') || 'General legal research'}
 
-KEY REASONING POINTS:
-${(initialAnalysis.detailed_legal_reasoning || '').substring(0, 800)}...
+                        KEY REASONING POINTS:
+                        ${(initialAnalysis.detailed_legal_reasoning || '').substring(0, 800)}...
 
-CRITICAL RESEARCH RULES:
-1. AVOID OVER-CONSTRAINING: Do NOT use more than 2-3 double-quoted phrases.
-2. PREFER "OR": Use the OR operator for broader recall between synonyms or similar sections (e.g., "eviction OR removal OR vacate").
-3. NO IMPLICIT "AND" OVERLOAD: Do not mix 5+ specific terms without OR, as it will likely return zero results.
-4. If the analysis mentions new BNS sections, you MUST also include their equivalent old IPC sections in the query (e.g., "(Section 85 BNS OR Section 498A IPC)").
+                        CRITICAL RESEARCH RULES:
+                        1. AVOID OVER-CONSTRAINING: Do NOT use more than 2-3 double-quoted phrases.
+                        2. PREFER "OR": Use the OR operator for broader recall between synonyms or similar sections (e.g., "eviction OR removal OR vacate").
+                        3. NO IMPLICIT "AND" OVERLOAD: Do not mix 5+ specific terms without OR, as it will likely return zero results.
+                        4. If the analysis mentions new BNS sections, you MUST also include their equivalent old IPC sections in the query (e.g., "(Section 85 BNS OR Section 498A IPC)").
 
-KEEP THE QUERY CONCISE (under 300 characters). Avoid excessive Boolean operators.
+                        KEEP THE QUERY CONCISE (under 300 characters). Avoid excessive Boolean operators.
 
-Return REFINED JSON in the same format:
-{
-  "detailed_legal_reasoning": "Refined reasoning if needed...",
-  "legal_issues": [...],
-  "precedent_search_keywords": "..."
-}`;
+                        Return REFINED JSON using EXACTLY this schema structure:
+                        - detailed_legal_reasoning (string)
+                        - legal_issues (array of strings)
+                        - precedent_search_keywords (string)
+
+                        JSON:`;
 
                     const safeguardText = await generateWithFallback(
                         [
@@ -223,55 +283,70 @@ Return REFINED JSON in the same format:
                     }
                     console.log(`[Chat API] Found ${precedentSources.length} precedents.`);
 
-                    const unifiedChunks = [
-                        ...precedentSources.map((p: any) => ({ sourceType: 'precedent', retrievedContext: { title: p.caseName || p.title, text: p.summary || p.snippet || p.excerpt, citation: p.citation || 'Judgment', court: p.court, year: p.year, judges: p.judges, pdfUrl: p.pdfUrl, petitioner: p.petitioner, respondent: p.respondent } }))
-                    ];
+                    const unifiedChunks = precedentSources.map((p: any) => {
+                        const rawText = p.summary || p.snippet || p.excerpt || '';
+                        const safeText = rawText.length > 1500 ? rawText.substring(0, 1500) + '... [TRUNCATED FOR LENGTH]' : rawText;
+                        return { 
+                            sourceType: 'precedent', 
+                            retrievedContext: { 
+                                title: p.caseName || p.title, 
+                                text: safeText, 
+                                citation: p.citation || 'Judgment', 
+                                court: p.court, 
+                                year: p.year, 
+                                judges: p.judges, 
+                                pdfUrl: p.pdfUrl, 
+                                petitioner: p.petitioner, 
+                                respondent: p.respondent 
+                            } 
+                        };
+                    });
 
                     const unifiedTextContext = unifiedChunks.map((c: any, i: number) => {
                         const ctx = c.retrievedContext;
                         return `[[${i + 1}]] PRECEDENT: ${ctx.title} (${ctx.citation})\nExcerpt: ${ctx.text}`;
                     }).join('\n\n---\n\n');
-
+                    
+                    console.log(unifiedTextContext);
                     // ── Call 3: Strategy Generator (120B) ──────────────────
                     const strategyPrompt = `You are Juris, a senior legal strategist. Generate a highly explanatory, premium, and actionable legal strategy based EXCLUSIVELY on the provided 6 landmark precedents.
+                        ### FORMATTING RULES:
+                        1. Use clear Markdown headers (###) for each section.
+                        2. Use **bolding** for key legal terms, statues, and core arguments.
+                        3. Use bullet points for readability.
+                        4. Ensure a professional, authoritative tone.
 
-### FORMATTING RULES:
-1. Use clear Markdown headers (###) for each section.
-2. Use **bolding** for key legal terms, statues, and core arguments.
-3. Use bullet points for readability.
-4. Ensure a professional, authoritative tone.
+                        ### CITATION RULES:
+                        - Every claim or legal point MUST end with the EXACT format [[n]] where n is the source number.
+                        - Do NOT add spaces inside the brackets (e.g., use [[1]], not [[ 1 ]]).
+                        - Only cite if the information is directly supported by the precedent.
 
-### CITATION RULES:
-- Every claim or legal point MUST end with the EXACT format [[n]] where n is the source number.
-- Do NOT add spaces inside the brackets (e.g., use [[1]], not [[ 1 ]]).
-- Only cite if the information is directly supported by the precedent.
+                        ### IF NO PRECEDENTS ARE FOUND:
+                        If "No precedents found" is shown, you MUST NOT provide a strategy. Instead, inform the user: "No specific judicial precedents were found for your query. To ensure legal accuracy and avoid hallucination, Juris requires factual source material to draft a strategy."
 
-### IF NO PRECEDENTS ARE FOUND:
-If "No precedents found" is shown, you MUST NOT provide a strategy. Instead, inform the user: "No specific judicial precedents were found for your query. To ensure legal accuracy and avoid hallucination, Juris requires factual source material to draft a strategy."
+                        ### RESPONSE STRUCTURE:
 
-### RESPONSE STRUCTURE:
+                        ### 1. Case Similarities
+                        Explain the specific factual and legal similarities between the user's case context and the cited precedents.
 
-### 1. Case Similarities
-Explain the specific factual and legal similarities between the user's case context and the cited precedents.
+                        ### 2. Winning Arguments
+                        Detail the specific arguments the lawyer can make in court, backed by the provided precedents, to help them win.
 
-### 2. Winning Arguments
-Detail the specific arguments the lawyer can make in court, backed by the provided precedents, to help them win.
+                        ### 3. Pitfalls & Counter-Arguments
+                        Explain potential edge cases, pitfalls, or counter-arguments that the opposing side might raise based on the precedents.
 
-### 3. Pitfalls & Counter-Arguments
-Explain potential edge cases, pitfalls, or counter-arguments that the opposing side might raise based on the precedents.
+                        ### 4. Action Plan
+                        Provide a logical, step-by-step plan for the lawyer to follow, incorporating the precedents at the correct stages.
 
-### 4. Action Plan
-Provide a logical, step-by-step plan for the lawyer to follow, incorporating the precedents at the correct stages.
+                        ---
+                        LEGAL REASONING:
+                        ${analysis.detailed_legal_reasoning}
 
----
-LEGAL REASONING:
-${analysis.detailed_legal_reasoning}
+                        FULL CONVERSATION CONTEXT (FOR FACTS):
+                        ${conversationHistory}
 
-CASE CONTEXT:
-${userQuery}
-
-JUDICIAL PRECEDENTS:
-${unifiedTextContext || 'No precedents found.'}`;
+                        JUDICIAL PRECEDENTS:
+                        ${unifiedTextContext || 'No precedents found.'}`;
 
                     // ── Call 3: Strategy Generator (120B with Streaming Fallback) ──
                     let currentStrategyModel = STRATEGY_MODEL;
@@ -306,7 +381,8 @@ ${unifiedTextContext || 'No precedents found.'}`;
                     }
 
                     sendChunk({ t: `\n\n---\n*Architecture: 6x Case Law Consolidation (Detailed 20B → Safeguard 20B → ${currentStrategyModel} Reasoning).*` });
-                    sendChunk({ m: { groundingChunks: unifiedChunks } });
+                    // Send precedents and reasoning array to frontend metadata so it can be automatically looped back in on follow-up queries
+                    sendChunk({ m: { groundingChunks: unifiedChunks, researchSummary: initialAnalysis } });
                     closeStream();
 
                 } catch (error: any) {

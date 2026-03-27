@@ -115,6 +115,7 @@ export default function Home() {
   const [input, setInput] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
   const [isMounted, setIsMounted] = React.useState(false);
+  const [isResearchEnabled, setIsResearchEnabled] = React.useState(true);
 
   React.useEffect(() => {
     setIsMounted(true);
@@ -149,13 +150,31 @@ export default function Home() {
       const assistantId = (Date.now() + 1).toString();
       setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
 
+      const requestMessages = [...messages, userMessage].map((m) => {
+        let finalContent = m.content;
+        // If this specific message was the research response, we append the context to it unseen by the user!
+        if ('metadata' in m && (m as any).metadata?.groundingChunks) {
+          const unifiedContext = (m as any).metadata.groundingChunks.map((c: any, i: number) => {
+            const ctx = c.retrievedContext;
+            return `[[${i + 1}]] PRECEDENT: ${ctx.title} (${ctx.citation || 'Judgment'})\nExcerpt: ${ctx.text}`;
+          }).join('\n\n---\n\n');
+          // We structure it clearly so the LLM understands this was the context it used.
+          finalContent = `[SYSTEM CONTEXT - RESEARCH FOUND]:\n${unifiedContext}\n\n[MY STRATEGY]:\n${finalContent}`;
+        }
+        return { role: m.role, content: finalContent };
+      });
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMessage] }),
+        body: JSON.stringify({ 
+          messages: requestMessages, 
+          isResearch: isResearchEnabled
+        }),
       });
 
       if (!response.ok) throw new Error(response.statusText);
+      setIsResearchEnabled(false);
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
@@ -275,6 +294,21 @@ export default function Home() {
             <Plus className="h-3.5 w-3.5" />
             {mode === 'landing' ? <span className="hidden sm:inline">Files</span> : ''}
           </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsResearchEnabled(!isResearchEnabled)}
+            className={`gap-1.5 h-8 text-[12px] font-semibold px-2 transition-all cursor-pointer ${
+              isResearchEnabled 
+                ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100" 
+                : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/50"
+            }`}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Research</span>
+          </Button>
+
           {mode === 'landing' && (
             <>
               <Button variant="ghost" size="sm" className="gap-1.5 text-slate-500 hover:text-slate-900 h-8 text-[12px] font-semibold px-2 transition-all hover:bg-slate-200/50 cursor-pointer">
@@ -285,16 +319,7 @@ export default function Home() {
                 <LayoutGrid className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Prompts</span>
               </Button>
-              <Button variant="ghost" size="sm" className="gap-1.5 text-slate-500 hover:text-slate-900 h-8 text-[12px] font-semibold px-2 transition-all hover:bg-slate-200/50 cursor-pointer">
-                <Sparkles className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Improve</span>
-              </Button>
             </>
-          )}
-          {mode === 'chat' && (
-            <Button variant="ghost" size="sm" className="gap-1.5 text-slate-500 hover:text-slate-900 h-8 text-[12px] font-semibold px-2 transition-all hover:bg-slate-200/50 cursor-pointer">
-              <Sparkles className="h-3.5 w-3.5" />
-            </Button>
           )}
         </div>
 
@@ -316,6 +341,137 @@ export default function Home() {
       </div>
     </Card>
   );
+
+  const renderedMessages = React.useMemo(() => (
+    <TooltipProvider delay={200}>
+      {messages.map((msg) => (
+        <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+          <div className={`px-4 py-3 rounded-2xl max-w-[85%] text-[15px] leading-relaxed ${msg.role === 'user' ? 'bg-slate-100 text-slate-900 rounded-br-sm' : 'bg-transparent text-slate-800'}`}>
+            {msg.role === 'assistant' && <div className="font-bold text-slate-900 mb-2 flex items-center gap-2"><div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white font-serif text-[10px]">J</div> Juris</div>}
+            <div className="markdown-prose">
+              {msg.role === 'assistant' ? (
+                <>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      // Intercept citation links to render custom Tooltips
+                      a: ({ node, href, children, ...props }) => {
+                        if (href && href.startsWith('#cite-')) {
+                          const chunkPart = href.replace('#cite-', '');
+                          const chunkIdx = parseInt(chunkPart, 10) - 1;
+
+                          const chunk = msg.metadata?.groundingChunks?.[chunkIdx];
+                          if (!chunk) return <a href={href} {...props}>{children}</a>;
+
+                          const fullText = chunk.retrievedContext?.text?.trim() || "";
+                          const smartSnippet = fullText;
+
+                          const isPrecedent = chunk.sourceType === 'precedent';
+                          const ctx = chunk.retrievedContext || {};
+                          const displayTitle = isPrecedent
+                            ? (ctx.title || 'Case Precedent')
+                            : (ctx.title?.replace('.pdf', '') || 'Statute');
+                          const courtYearLine = isPrecedent
+                            ? [ctx.court, ctx.year].filter(Boolean).join(' · ')
+                            : '';
+                          const judgesLine = isPrecedent && ctx.judges?.length
+                            ? `Bench: ${ctx.judges.join(', ')}`
+                            : '';
+
+                          return (
+                            <Tooltip>
+                              <TooltipTrigger render={<span />} className="inline-flex items-center justify-center min-w-[22px] h-[18px] bg-indigo-50/80 border border-indigo-200/50 hover:bg-indigo-100 hover:border-indigo-300 rounded-md text-indigo-700 text-[10px] font-bold mx-1 align-baseline cursor-pointer shadow-sm transition-all hover:scale-105">
+                                {children}
+                              </TooltipTrigger>
+                              <TooltipContent
+                                side="top"
+                                sideOffset={14}
+                                className="flex flex-col gap-0 w-[500px] max-h-[480px] p-0 bg-white border border-slate-200 shadow-2xl rounded-2xl z-[100] overflow-hidden"
+                              >
+                                <div className="bg-white px-7 py-5 border-b border-slate-50 flex flex-col gap-2.5 sticky top-0 z-10">
+                                  <div className="flex items-start justify-between gap-4 min-w-0 w-full">
+                                    <div className="flex flex-col gap-2.5 items-start min-w-0 shrink overflow-hidden">
+                                      <span className={`text-[8.5px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded-md ${isPrecedent ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-800'} border border-current opacity-80 shrink-0`}>
+                                        {isPrecedent ? 'Judgment' : 'Statute'}
+                                      </span>
+                                      <span className="text-[15px] font-serif font-bold text-slate-900 leading-[1.3] tracking-tight break-words min-w-0 w-full">
+                                        {displayTitle}
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] font-bold text-slate-300 tracking-[0.2em] uppercase shrink-0 pt-1">
+                                      Src {chunkPart}
+                                    </div>
+                                  </div>
+                                  {(courtYearLine || ctx.citation) && (
+                                    <div className="text-[11px] text-slate-400 font-medium flex flex-wrap items-center gap-x-2 gap-y-1 pl-0.5 opacity-90">
+                                      {courtYearLine && <span>{courtYearLine}</span>}
+                                      {ctx.citation && <span>· {ctx.citation}</span>}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="px-9 py-8 overflow-y-auto custom-scrollbar bg-[#FCFCFD]">
+                                  <div className="markdown-prose text-slate-600 text-[14.5px] leading-[1.8] font-serif tracking-normal">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                      {smartSnippet
+                                        .replace(/\\n/g, '\n')
+                                        .replace(/\\"/g, '"')
+                                        .replace(/(Case|Court|Citation|Summary|Statute|Section|Analysis):/gi, '**$1:**')
+                                      }
+                                    </ReactMarkdown>
+                                  </div>
+                                </div>
+                                <div className="bg-white px-9 py-4 border-t border-slate-50 flex items-center justify-between mt-auto">
+                                  <span className="text-[10.5px] text-slate-400 font-serif italic tracking-wide">
+                                    {isPrecedent ? 'Judicial Precedent · Vaquill' : 'Statutory Reference · Juris'}
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      // Use direct PDF link from Vaquill if available
+                                      if (ctx.pdfUrl) {
+                                        window.open(ctx.pdfUrl, '_blank');
+                                        return;
+                                      }
+                                      const title = ctx.title || "";
+                                      const text = ctx.text || "";
+                                      let searchUrl = "";
+                                      if (title === "Statute") {
+                                        const sectionMatch = text.match(/Section\s*(\d+)/i);
+                                        const actMatch = text.match(/(BNS|BNSS|BSA|Constitution)/i);
+                                        const query = `${sectionMatch ? sectionMatch[0] : ""} ${actMatch ? actMatch[0] : "BNS"}`.trim();
+                                        searchUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(query || text.substring(0, 30))}`;
+                                      } else {
+                                        searchUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(title)}`;
+                                      }
+                                      window.open(searchUrl, '_blank');
+                                    }}
+                                    className="text-[11px] text-slate-900 font-bold hover:underline cursor-pointer flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition-all hover:border-slate-300"
+                                  >
+                                    {ctx.pdfUrl ? 'View Judgment' : 'Full Document'} <ExternalLink className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        }
+                        return <a href={href} className="text-blue-600 hover:underline" {...props}>{children}</a>;
+                      }
+                    }}
+                  >
+                    {processCitations(msg.content)}
+                  </ReactMarkdown>
+                </>
+              ) : (
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+              )}
+              {isLoading && msg.role === 'assistant' && msg.content === '' && (
+                <SequentialLoader />
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </TooltipProvider>
+  ), [messages, isLoading]);
 
   if (!isMounted) {
     return <div className="flex h-screen w-full bg-[#FAFAFA] overflow-hidden" />;
@@ -414,136 +570,7 @@ export default function Home() {
                   animate={{ opacity: 1 }}
                   className="w-full max-w-[950px] mx-auto flex flex-col gap-8 px-4 sm:px-6"
                 >
-                  <TooltipProvider delay={200}>
-                    {messages.map((msg) => (
-                      <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                        <div className={`px-4 py-3 rounded-2xl max-w-[85%] text-[15px] leading-relaxed ${msg.role === 'user' ? 'bg-slate-100 text-slate-900 rounded-br-sm' : 'bg-transparent text-slate-800'}`}>
-                          {msg.role === 'assistant' && <div className="font-bold text-slate-900 mb-2 flex items-center gap-2"><div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white font-serif text-[10px]">J</div> Juris</div>}
-                          <div className="markdown-prose">
-                            {msg.role === 'assistant' ? (
-                              <>
-                                <ReactMarkdown
-                                  remarkPlugins={[remarkGfm]}
-                                  components={{
-                                    // Intercept citation links to render custom Tooltips
-                                    a: ({ node, href, children, ...props }) => {
-                                      if (href && href.startsWith('#cite-')) {
-                                        const chunkPart = href.replace('#cite-', '');
-                                        const chunkIdx = parseInt(chunkPart, 10) - 1;
-
-                                        const chunk = msg.metadata?.groundingChunks?.[chunkIdx];
-                                        if (!chunk) return <a href={href} {...props}>{children}</a>;
-
-                                        const fullText = chunk.retrievedContext?.text?.trim() || "";
-                                        const smartSnippet = fullText;
-
-                                        const isPrecedent = chunk.sourceType === 'precedent';
-                                        const ctx = chunk.retrievedContext || {};
-                                        const displayTitle = isPrecedent
-                                          ? (ctx.title || 'Case Precedent')
-                                          : (ctx.title?.replace('.pdf', '') || 'Statute');
-                                        const courtYearLine = isPrecedent
-                                          ? [ctx.court, ctx.year].filter(Boolean).join(' · ')
-                                          : '';
-                                        const judgesLine = isPrecedent && ctx.judges?.length
-                                          ? `Bench: ${ctx.judges.join(', ')}`
-                                          : '';
-
-                                        return (
-                                          <Tooltip>
-                                            <TooltipTrigger
-                                              className="inline-flex items-center justify-center min-w-[22px] h-[18px] bg-indigo-50/80 border border-indigo-200/50 hover:bg-indigo-100 hover:border-indigo-300 rounded-md text-indigo-700 text-[10px] font-bold mx-1 align-baseline cursor-pointer shadow-sm transition-all hover:scale-105"
-                                            >
-                                              {children}
-                                            </TooltipTrigger>
-                                            <TooltipContent
-                                              side="top"
-                                              sideOffset={14}
-                                              className="flex flex-col gap-0 w-[500px] max-h-[480px] p-0 bg-white border border-slate-200 shadow-2xl rounded-2xl z-[100] overflow-hidden"
-                                            >
-                                              <div className="bg-white px-7 py-5 border-b border-slate-50 flex flex-col gap-2.5 sticky top-0 z-10">
-                                                <div className="flex items-start justify-between gap-4 min-w-0 w-full">
-                                                  <div className="flex flex-col gap-2.5 items-start min-w-0 shrink overflow-hidden">
-                                                    <span className={`text-[8.5px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded-md ${isPrecedent ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-800'} border border-current opacity-80 shrink-0`}>
-                                                      {isPrecedent ? 'Judgment' : 'Statute'}
-                                                    </span>
-                                                    <span className="text-[15px] font-serif font-bold text-slate-900 leading-[1.3] tracking-tight break-words min-w-0 w-full">
-                                                      {displayTitle}
-                                                    </span>
-                                                  </div>
-                                                  <div className="text-[10px] font-bold text-slate-300 tracking-[0.2em] uppercase shrink-0 pt-1">
-                                                    Src {chunkPart}
-                                                  </div>
-                                                </div>
-                                                {(courtYearLine || ctx.citation) && (
-                                                  <div className="text-[11px] text-slate-400 font-medium flex flex-wrap items-center gap-x-2 gap-y-1 pl-0.5 opacity-90">
-                                                    {courtYearLine && <span>{courtYearLine}</span>}
-                                                    {ctx.citation && <span>· {ctx.citation}</span>}
-                                                  </div>
-                                                )}
-                                              </div>
-                                              <div className="px-9 py-8 overflow-y-auto custom-scrollbar bg-[#FCFCFD]">
-                                                <div className="markdown-prose text-slate-600 text-[14.5px] leading-[1.8] font-serif tracking-normal">
-                                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                                    {smartSnippet
-                                                      .replace(/\\n/g, '\n')
-                                                      .replace(/\\"/g, '"')
-                                                      .replace(/(Case|Court|Citation|Summary|Statute|Section|Analysis):/gi, '**$1:**')
-                                                    }
-                                                  </ReactMarkdown>
-                                                </div>
-                                              </div>
-                                              <div className="bg-white px-9 py-4 border-t border-slate-50 flex items-center justify-between mt-auto">
-                                                <span className="text-[10.5px] text-slate-400 font-serif italic tracking-wide">
-                                                  {isPrecedent ? 'Judicial Precedent · Vaquill' : 'Statutory Reference · Juris'}
-                                                </span>
-                                                <button
-                                                  onClick={() => {
-                                                    // Use direct PDF link from Vaquill if available
-                                                    if (ctx.pdfUrl) {
-                                                      window.open(ctx.pdfUrl, '_blank');
-                                                      return;
-                                                    }
-                                                    const title = ctx.title || "";
-                                                    const text = ctx.text || "";
-                                                    let searchUrl = "";
-                                                    if (title === "Statute") {
-                                                      const sectionMatch = text.match(/Section\s*(\d+)/i);
-                                                      const actMatch = text.match(/(BNS|BNSS|BSA|Constitution)/i);
-                                                      const query = `${sectionMatch ? sectionMatch[0] : ""} ${actMatch ? actMatch[0] : "BNS"}`.trim();
-                                                      searchUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(query || text.substring(0, 30))}`;
-                                                    } else {
-                                                      searchUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(title)}`;
-                                                    }
-                                                    window.open(searchUrl, '_blank');
-                                                  }}
-                                                  className="text-[11px] text-slate-900 font-bold hover:underline cursor-pointer flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition-all hover:border-slate-300"
-                                                >
-                                                  {ctx.pdfUrl ? 'View Judgment' : 'Full Document'} <ExternalLink className="h-3 w-3" />
-                                                </button>
-                                              </div>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        );
-                                      }
-                                      return <a href={href} className="text-blue-600 hover:underline" {...props}>{children}</a>;
-                                    }
-                                  }}
-                                >
-                                  {processCitations(msg.content)}
-                                </ReactMarkdown>
-                              </>
-                            ) : (
-                              <p className="whitespace-pre-wrap">{msg.content}</p>
-                            )}
-                            {isLoading && msg.role === 'assistant' && msg.content === '' && (
-                              <SequentialLoader />
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </TooltipProvider>
+                  {renderedMessages}
                   <div ref={messagesEndRef} />
                 </motion.div>
               )}
