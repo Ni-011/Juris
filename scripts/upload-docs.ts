@@ -14,7 +14,9 @@ async function main() {
     try {
         console.log('Creating FileSearchStore...');
         const store = await ai.fileSearchStores.create({
-            displayName: 'Juris Legal Docs'
+            config: {
+                displayName: 'Juris Legal Docs'
+            }
         });
 
         console.log(`Created store successfully: ${store.name}`);
