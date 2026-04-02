@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
 import { searchCases } from '@/lib/vaquill';
+import { Pinecone } from '@pinecone-database/pinecone';
 
 // Initialize NVIDIA client
 const nvidia = new OpenAI({
@@ -8,9 +9,13 @@ const nvidia = new OpenAI({
     baseURL: 'https://integrate.api.nvidia.com/v1',
 });
 
+// Initialize Pinecone client
+const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY as string });
+const jurisIndex = pc.Index('juris');
+
 // Model Configuration
-const STRATEGY_MODEL = 'moonshotai/kimi-k2-instruct';
-const INTERNAL_MODEL = 'moonshotai/kimi-k2-instruct';
+const STRATEGY_MODEL = 'moonshotai/kimi-k2-thinking';
+const INTERNAL_MODEL = 'moonshotai/kimi-k2-instruct-0905';
 
 function repairJson(text: string): string {
     let clean = (text || '').trim();
@@ -142,7 +147,7 @@ export async function POST(req: Request) {
 
         // --- FAST PATH: Conversational Follow-up ---
         if (!isResearch) {
-            console.log(`[Chat API] Follow-up Chat Detected. Using ${STRATEGY_MODEL} for fast conversational response.`);
+            console.log(`[Chat API] Follow-up Chat Detected. Using ${INTERNAL_MODEL} for fast conversational response.`);
 
             const responseStream = new ReadableStream({
                 async start(controller) {
@@ -161,8 +166,16 @@ export async function POST(req: Request) {
                         const systemPrompt = {
                             role: 'system',
                             content: `You are Juris, an elite legal AI assistant. Answer follow-up questions directly using the conversational context. 
-Always cite sources exactly as [[n]] where n is the source number (e.g., [[1]]). 
-Do NOT hallucinate case laws.`
+                        
+                            ### FORMATTING RULES:
+                            1. Use clear Markdown headers (###) for distinct sections where appropriate.
+                            2. Use **bolding** for key legal terms and critical points.
+                            3. Use bullet points for readability.
+                            
+                            ### CITATION RULES:
+                            Always cite sources exactly as [[n]] where n is the source number (e.g., [[1]]). 
+                            
+                            Do NOT hallucinate case laws.`
                         };
 
                         const recentSafeMessages = messages.map((m: any) => ({
@@ -171,7 +184,7 @@ Do NOT hallucinate case laws.`
                         }));
 
                         const chatStream = await nvidia.chat.completions.create({
-                            model: STRATEGY_MODEL,
+                            model: INTERNAL_MODEL,
                             messages: [systemPrompt, ...recentSafeMessages],
                             stream: true,
                         } as any) as any;
@@ -261,12 +274,13 @@ Do NOT hallucinate case laws.`
                         - detailed_legal_reasoning (string)
                         - legal_issues (array of strings)
                         - precedent_search_keywords (string)
+                        - statute_search_keywords (string)
 
                         JSON:`;
 
                     const safeguardText = await generateNvidia(
                         [
-                            { role: 'system', content: 'You are a legal research safeguards agent. Refine Case Law queries. Respond ONLY with JSON.' },
+                            { role: 'system', content: 'You are a legal research safeguards agent. Refine Case Law and Statute queries. Respond ONLY with JSON.' },
                             { role: 'user', content: safeguardPrompt }
                         ],
                         'Safeguard',
@@ -278,17 +292,55 @@ Do NOT hallucinate case laws.`
                     console.log(`[Chat API] [Stage 2] Safeguard Finished.`);
                     console.log(`[Chat API] Safeguard output:`, JSON.stringify(analysis, null, 2));
 
-                    // ── Vaquill Search ────────
+                    // ── Vaquill & Pinecone Search Concurrently ────────
                     const precedentQuery = ensureString(analysis.precedent_search_keywords || analysis.legal_issues || '').trim();
+                    const statuteQuery = ensureString(analysis.statute_search_keywords || analysis.legal_issues || '').trim();
                     console.log(`[Chat API] Precedent Query: ${precedentQuery}`);
+                    console.log(`[Chat API] Statute Query: ${statuteQuery}`);
 
                     let precedentSources: any[] = [];
-                    if (precedentQuery) {
-                        precedentSources = await searchCases(precedentQuery, 6);
-                    }
-                    console.log(`[Chat API] Found ${precedentSources.length} precedents.`);
+                    let statuteChunks: any[] = [];
 
-                    const unifiedChunks = precedentSources.map((p: any) => {
+                    const fetchPrecedents = async () => {
+                        if (precedentQuery) {
+                            precedentSources = await searchCases(precedentQuery, 5);
+                        }
+                    };
+
+                    const fetchStatutes = async () => {
+                        if (statuteQuery) {
+                            try {
+                                const queryEmbed = await pc.inference.embed({
+                                    model: 'llama-text-embed-v2',
+                                    inputs: [statuteQuery],
+                                    parameters: { inputType: 'query', truncate: 'END' }
+                                });
+                                const statRes = await jurisIndex.query({
+                                    topK: 5,
+                                    vector: (queryEmbed.data[0] as any).values,
+                                    includeMetadata: true
+                                });
+                                if (statRes.matches) {
+                                    statuteChunks = statRes.matches.map((m: any) => ({
+                                        sourceType: 'statute',
+                                        retrievedContext: {
+                                            act: m.metadata.act,
+                                            number: m.metadata.number,
+                                            title: m.metadata.title,
+                                            text: m.metadata.text
+                                        }
+                                    }));
+                                }
+                            } catch (e) {
+                                console.error("[Chat API] Pinecone search failed:", e);
+                            }
+                        }
+                    };
+
+                    await Promise.all([fetchPrecedents(), fetchStatutes()]);
+                    console.log(`[Chat API] Found ${precedentSources.length} precedents, ${statuteChunks.length} statutes.`);
+
+                    const unifiedPrecedentChunks = precedentSources.map((p: any) => {
                         const rawText = p.summary || p.snippet || p.excerpt || '';
                         const safeText = rawText.length > 1500 ? rawText.substring(0, 1500) + '... [TRUNCATED FOR LENGTH]' : rawText;
                         return {
@@ -307,33 +359,43 @@ Do NOT hallucinate case laws.`
                         };
                     });
 
-                    const unifiedTextContext = unifiedChunks.map((c: any, i: number) => {
-                        const ctx = c.retrievedContext;
-                        return `[[${i + 1}]] PRECEDENT: ${ctx.title} (${ctx.citation})\nExcerpt: ${ctx.text}`;
+                    // Combine them
+                    const allChunks = [...statuteChunks, ...unifiedPrecedentChunks];
+
+                    const unifiedTextContext = allChunks.map((c: any, i: number) => {
+                        if (c.sourceType === 'statute') {
+                            const ctx = c.retrievedContext;
+                            return `[[${i + 1}]] STATUTE: ${ctx.act} ${ctx.number} - ${ctx.title}\nText: ${ctx.text}`;
+                        } else {
+                            const ctx = c.retrievedContext;
+                            return `[[${i + 1}]] PRECEDENT: ${ctx.title} (${ctx.citation})\nExcerpt: ${ctx.text}`;
+                        }
                     }).join('\n\n---\n\n');
 
                     // ── Call 3: Strategy Generator ──────────────────
-                    const strategyPrompt = `You are Juris, a senior legal strategist. Generate a highly explanatory, premium, and actionable legal strategy based EXCLUSIVELY on the provided 6 landmark precedents.
+                    const strategyPrompt = `You are Juris, a senior legal strategist. Generate a highly explanatory, premium, and actionable legal strategy based EXCLUSIVELY on the provided statutes and precedents.
                         ### FORMATTING RULES:
                         1. Use clear Markdown headers (###) for each section.
                         2. Use **bolding** for key legal terms.
                         3. Use bullet points.
 
                         ### CITATION RULES:
-                        - Every claim MUST end with [[n]].
-
+                        - Every claim MUST end with [[n]] mapped exactly to the source number.
+                        - You must cite the statutes when analyzing the rules, and cite precedents when analyzing court application.
+                        
                         ### RESPONSE STRUCTURE:
-                        ### 1. Case Similarities
-                        ### 2. Winning Arguments
-                        ### 3. Pitfalls & Counter-Arguments
-                        ### 4. Action Plan
+                        ### 1. Statutory Grounding
+                        ### 2. Case Similarities
+                        ### 3. Winning Arguments
+                        ### 4. Pitfalls & Counter-Arguments
+                        ### 5. Action Plan
 
                         ---
                         LEGAL ISSUES:
                         ${analysis.legal_issues?.join(', ') || 'General legal research'}
 
-                        JUDICIAL PRECEDENTS:
-                        ${unifiedTextContext || 'No precedents found.'}`;
+                        JUDICIAL PRECEDENTS & STATUTES:
+                        ${unifiedTextContext || 'No context found.'}`;
 
                     console.log(`[Chat API] [Stage 3] Strategy Generation Starting (${STRATEGY_MODEL})...`);
                     const strategyStream = await nvidia.chat.completions.create({
@@ -353,8 +415,8 @@ Do NOT hallucinate case laws.`
                         if (content) sendChunk({ t: content });
                     }
 
-                    sendChunk({ t: `\n\n---\n*Architecture: Kimi-K2-Instruct via NVIDIA API.*` });
-                    sendChunk({ m: { groundingChunks: unifiedChunks, researchSummary: initialAnalysis } });
+                    sendChunk({ t: `\n\n---\n*Architecture: Kimi-K2-Thinking [Strategy] & Kimi-K2-Instruct-0905 [Analyzer] via NVIDIA API. Grounded with Vaquill Case Law & Pinecone Statutes.*` });
+                    sendChunk({ m: { groundingChunks: allChunks, researchSummary: initialAnalysis } });
                     closeStream();
 
                 } catch (error: any) {
