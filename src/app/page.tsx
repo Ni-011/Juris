@@ -167,8 +167,8 @@ export default function Home() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          messages: requestMessages, 
+        body: JSON.stringify({
+          messages: requestMessages,
           isResearch: isResearchEnabled
         }),
       });
@@ -294,16 +294,15 @@ export default function Home() {
             <Plus className="h-3.5 w-3.5" />
             {mode === 'landing' ? <span className="hidden sm:inline">Files</span> : ''}
           </Button>
-          
+
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setIsResearchEnabled(!isResearchEnabled)}
-            className={`gap-1.5 h-8 text-[12px] font-semibold px-2 transition-all cursor-pointer ${
-              isResearchEnabled 
-                ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100" 
-                : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/50"
-            }`}
+            className={`gap-1.5 h-8 text-[12px] font-semibold px-2 transition-all cursor-pointer ${isResearchEnabled
+              ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+              : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/50"
+              }`}
           >
             <BookOpen className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Research</span>
@@ -363,14 +362,28 @@ export default function Home() {
                           const chunk = msg.metadata?.groundingChunks?.[chunkIdx];
                           if (!chunk) return <a href={href} {...props}>{children}</a>;
 
-                          const fullText = chunk.retrievedContext?.text?.trim() || "";
-                          const smartSnippet = fullText;
-
                           const isPrecedent = chunk.sourceType === 'precedent';
                           const ctx = chunk.retrievedContext || {};
                           const displayTitle = isPrecedent
                             ? (ctx.title || 'Case Precedent')
                             : (ctx.title?.replace('.pdf', '') || 'Statute');
+
+                          const fullText = chunk.retrievedContext?.text?.trim() || "";
+                          let smartSnippet = fullText;
+
+                          // Deduplicate title from snippet if it repeats
+                          if (smartSnippet.toLowerCase().startsWith(displayTitle.toLowerCase())) {
+                            smartSnippet = smartSnippet.substring(displayTitle.length).trim();
+                            smartSnippet = smartSnippet.replace(/^[:\-\s—]+/, '');
+                          }
+
+                          // Cleanup excessive spaces (likely OCR/formatting artifacts)
+                          smartSnippet = smartSnippet
+                            .replace(/[ \t]{2,}/g, ' ')
+                            .replace(/\(\s+([^)]+)\s+\)/g, '($1)')
+                            .replace(/\(\s+/g, '(')
+                            .replace(/\s+\)/g, ')');
+
                           const courtYearLine = isPrecedent
                             ? [ctx.court, ctx.year].filter(Boolean).join(' · ')
                             : '';
@@ -386,32 +399,53 @@ export default function Home() {
                               <TooltipContent
                                 side="top"
                                 sideOffset={14}
-                                className="flex flex-col gap-0 w-[500px] max-h-[480px] p-0 bg-white border border-slate-200 shadow-2xl rounded-2xl z-[100] overflow-hidden"
+                                className="flex flex-col gap-0 w-[calc(100vw-2rem)] sm:w-[460px] max-h-[520px] p-0 bg-white border border-slate-200 shadow-professional rounded-2xl z-[100] overflow-hidden"
                               >
-                                <div className="bg-white px-7 py-5 border-b border-slate-50 flex flex-col gap-2.5 sticky top-0 z-10">
-                                  <div className="flex items-start justify-between gap-4 min-w-0 w-full">
-                                    <div className="flex flex-col gap-2.5 items-start min-w-0 shrink overflow-hidden">
-                                      <span className={`text-[8.5px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded-md ${isPrecedent ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-800'} border border-current opacity-80 shrink-0`}>
+                                {/* Header */}
+                                <div className="bg-white px-8 py-6 border-b border-slate-50 flex flex-col gap-2 sticky top-0 z-10">
+                                  <div className="flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                      <span className={`text-[10px] font-bold uppercase tracking-[0.15em] px-2 py-0.5 rounded-md border ${isPrecedent
+                                        ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                                        : 'bg-amber-50 text-amber-800 border-amber-100'
+                                        }`}>
                                         {isPrecedent ? 'Judgment' : 'Statute'}
                                       </span>
-                                      <span className="text-[15px] font-serif font-bold text-slate-900 leading-[1.3] tracking-tight break-words min-w-0 w-full">
-                                        {displayTitle}
+                                      <div className="h-0.5 w-0.5 rounded-full bg-slate-300" />
+                                      <span className="text-[10px] font-bold text-slate-400 tracking-[0.1em] uppercase">
+                                        Source {chunkPart}
                                       </span>
                                     </div>
-                                    <div className="text-[10px] font-bold text-slate-300 tracking-[0.2em] uppercase shrink-0 pt-1">
-                                      Src {chunkPart}
-                                    </div>
                                   </div>
+
+                                  <h3 className="text-[17px] font-serif font-bold text-slate-900 leading-tight tracking-tight break-words">
+                                    {displayTitle}
+                                  </h3>
+
                                   {(courtYearLine || ctx.citation) && (
-                                    <div className="text-[11px] text-slate-400 font-medium flex flex-wrap items-center gap-x-2 gap-y-1 pl-0.5 opacity-90">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium text-slate-500">
                                       {courtYearLine && <span>{courtYearLine}</span>}
-                                      {ctx.citation && <span>· {ctx.citation}</span>}
+                                      {courtYearLine && ctx.citation && <span className="text-slate-300">|</span>}
+                                      {ctx.citation && <span className="italic">{ctx.citation}</span>}
                                     </div>
                                   )}
                                 </div>
-                                <div className="px-9 py-8 overflow-y-auto custom-scrollbar bg-[#FCFCFD]">
-                                  <div className="markdown-prose text-slate-600 text-[14.5px] leading-[1.8] font-serif tracking-normal">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+
+                                {/* Body */}
+                                <div className="px-8 py-7 overflow-y-auto custom-scrollbar bg-[#FCFCFD] w-full max-w-full overflow-x-hidden">
+                                  <div className="markdown-prose text-slate-700 text-[14px] leading-[1.65] font-serif tracking-normal w-full max-w-full break-words overflow-x-hidden">
+                                    <ReactMarkdown
+                                      remarkPlugins={[remarkGfm]}
+                                      components={{
+                                        p: ({ children }) => <p className="mb-4 last:mb-0 break-words max-w-full whitespace-pre-wrap">{children}</p>,
+                                        blockquote: ({ children }) => <blockquote className="border-l-4 border-slate-200 pl-4 py-1 my-4 italic text-slate-500 break-words max-w-full">{children}</blockquote>,
+                                        code: ({ children }) => <code className="bg-slate-100 px-1 rounded text-[13px] break-all whitespace-pre-wrap">{children}</code>,
+                                        pre: ({ children }) => <pre className="bg-slate-50 p-3 rounded-lg my-3 overflow-x-auto whitespace-pre-wrap break-words max-w-full border border-slate-200/40 text-[13px]">{children}</pre>,
+                                        ul: ({ children }) => <ul className="list-disc ml-4 mb-4 space-y-2 break-words max-w-full">{children}</ul>,
+                                        ol: ({ children }) => <ol className="list-decimal ml-4 mb-4 space-y-2 break-words max-w-full">{children}</ol>,
+                                        li: ({ children }) => <li className="break-words max-w-full">{children}</li>
+                                      }}
+                                    >
                                       {smartSnippet
                                         .replace(/\\n/g, '\n')
                                         .replace(/\\"/g, '"')
@@ -420,13 +454,22 @@ export default function Home() {
                                     </ReactMarkdown>
                                   </div>
                                 </div>
-                                <div className="bg-white px-9 py-4 border-t border-slate-50 flex items-center justify-between mt-auto">
-                                  <span className="text-[10.5px] text-slate-400 font-serif italic tracking-wide">
-                                    {isPrecedent ? 'Judicial Precedent · Vaquill' : 'Statutory Reference · Juris'}
-                                  </span>
-                                  <button
+
+                                {/* Footer */}
+                                <div className="bg-white px-8 py-5 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-auto">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+                                      Verified Reference
+                                    </span>
+                                    <span className="text-[11px] text-slate-500 font-serif italic">
+                                      {isPrecedent ? 'Judicial Precedent · Vaquill' : 'Statutory Reference · Juris'}
+                                    </span>
+                                  </div>
+
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
                                     onClick={() => {
-                                      // Use direct PDF link from Vaquill if available
                                       if (ctx.pdfUrl) {
                                         window.open(ctx.pdfUrl, '_blank');
                                         return;
@@ -444,10 +487,11 @@ export default function Home() {
                                       }
                                       window.open(searchUrl, '_blank');
                                     }}
-                                    className="text-[11px] text-slate-900 font-bold hover:underline cursor-pointer flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition-all hover:border-slate-300"
+                                    className="h-8 px-4 gap-2 text-[11px] font-bold text-slate-900 border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-all rounded-xl"
                                   >
-                                    {ctx.pdfUrl ? 'View Judgment' : 'Full Document'} <ExternalLink className="h-3 w-3" />
-                                  </button>
+                                    {ctx.pdfUrl ? 'View Judgment' : 'Full Document'}
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Button>
                                 </div>
                               </TooltipContent>
                             </Tooltip>

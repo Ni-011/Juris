@@ -89,7 +89,7 @@ async function generateNvidia(
             }
 
             console.log(`[Chat API] ${label} config:`, JSON.stringify({ model: config.model, max_tokens: config.max_tokens }));
-            const stream = await nvidia.chat.completions.create(config, { timeout: 60000 }) as any;
+            const stream = await nvidia.chat.completions.create(config, { timeout: 30000 }) as any;
 
             let fullContent = "";
             let fullReasoning = "";
@@ -249,7 +249,7 @@ export async function POST(req: Request) {
                             { role: 'user', content: analyzerPrompt + "\n\nFULL CONVERSATION CONTEXT:\n" + conversationHistory }
                         ],
                         'Analyzer',
-                        131072,
+                        8192,
                         (text) => { try { JSON.parse(repairJson(text)); return true; } catch (e) { return false; } }
                     );
 
@@ -284,7 +284,7 @@ export async function POST(req: Request) {
                             { role: 'user', content: safeguardPrompt }
                         ],
                         'Safeguard',
-                        131072,
+                        8192,
                         (text) => { try { JSON.parse(repairJson(text)); return true; } catch (e) { return false; } }
                     );
 
@@ -320,16 +320,47 @@ export async function POST(req: Request) {
                                     vector: (queryEmbed.data[0] as any).values,
                                     includeMetadata: true
                                 });
+
                                 if (statRes.matches) {
-                                    statuteChunks = statRes.matches.map((m: any) => ({
-                                        sourceType: 'statute',
-                                        retrievedContext: {
-                                            act: m.metadata.act,
-                                            number: m.metadata.number,
-                                            title: m.metadata.title,
-                                            text: m.metadata.text
+                                    const primaryIds = statRes.matches.map((m: any) => m.id);
+                                    const neighborIds: string[] = [];
+
+                                    // For each match, attempt to fetch neighbor IDs (N-1, N+1)
+                                    statRes.matches.forEach((m: any) => {
+                                        const act = m.metadata.act;
+                                        const num = parseInt(m.metadata.number);
+                                        if (!isNaN(num)) {
+                                            if (num > 1) neighborIds.push(`${act}_${num - 1}`);
+                                            neighborIds.push(`${act}_${num + 1}`);
                                         }
-                                    }));
+                                    });
+
+                                    // Batch fetch all required IDs (Primary + Neighbors)
+                                    const allUniqueIds = Array.from(new Set([...primaryIds, ...neighborIds]));
+                                    const fetchRes = await jurisIndex.fetch({ ids: allUniqueIds as string[] });
+
+                                    if (fetchRes.records) {
+                                        const recordList = Object.values(fetchRes.records);
+
+                                        // Deduplicate and group by Act for a logical flow
+                                        statuteChunks = recordList.map((m: any) => ({
+                                            sourceType: 'statute',
+                                            retrievedContext: {
+                                                act: m.metadata.act,
+                                                number: parseInt(m.metadata.number) || 0,
+                                                title: m.metadata.title,
+                                                text: m.metadata.text
+                                            }
+                                        }))
+                                            .sort((a, b) => {
+                                                if (a.retrievedContext.act !== b.retrievedContext.act) {
+                                                    return a.retrievedContext.act.localeCompare(b.retrievedContext.act);
+                                                }
+                                                return a.retrievedContext.number - b.retrievedContext.number;
+                                            });
+
+                                        console.log(`[Chat API] Pinecone Expanded Context: ${statuteChunks.length} sections retrieved (Primary + Neighbors).`);
+                                    }
                                 }
                             } catch (e) {
                                 console.error("[Chat API] Pinecone search failed:", e);
@@ -396,12 +427,16 @@ export async function POST(req: Request) {
 
                         JUDICIAL PRECEDENTS & STATUTES:
                         ${unifiedTextContext || 'No context found.'}`;
-
                     console.log(`[Chat API] [Stage 3] Strategy Generation Starting (${STRATEGY_MODEL})...`);
                     const strategyStream = await nvidia.chat.completions.create({
                         model: STRATEGY_MODEL,
                         messages: [
-                            { role: 'system', content: 'Generate a high-parameter legal strategy using only provided judicial precedents.' },
+                            {
+                                role: 'system',
+                                content: `You are Juris, an elite legal strategist. Use ONLY the provided context. 
+                                CRITICAL: Every numeric citation [[n]] MUST correspond EXACTLY to its index in the context list below. 
+                                Do NOT reuse numbers from previous turns. Verify the text inside [[n]] matches the source provided.`
+                            },
                             { role: 'user', content: strategyPrompt }
                         ],
                         stream: true,
