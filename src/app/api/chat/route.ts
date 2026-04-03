@@ -235,10 +235,12 @@ export async function POST(req: Request) {
                     const analyzerPrompt = `Analyze the context for exhaustive CASE LAW research.
                                             Tasks:
                                             1. Identify primary legal issues.
-                                            2. Generate ONE high-recall keyword search string for Landmark Precedents.
+                                            2. Decide if a Case Law search is needed ('needs_precedent_search': true for factual scenarios, complex disputes, or case situations; false for direct statutory/constitutional questions).
+                                            3. Generate ONE high-recall keyword search string for Landmark Precedents.
 
                                             Return ONLY JSON using this exact schema:
                                             - legal_issues (array of strings)
+                                            - needs_precedent_search (boolean)
                                             - precedent_search_keywords (string)
 
                                             JSON:`;
@@ -273,6 +275,7 @@ export async function POST(req: Request) {
                         Return REFINED JSON using EXACTLY this schema structure:
                         - detailed_legal_reasoning (string)
                         - legal_issues (array of strings)
+                        - needs_precedent_search (boolean)
                         - precedent_search_keywords (string)
                         - statute_search_keywords (string)
 
@@ -281,7 +284,7 @@ export async function POST(req: Request) {
                     const safeguardText = await generateNvidia(
                         [
                             { role: 'system', content: 'You are a legal research safeguards agent. Refine Case Law and Statute queries. Respond ONLY with JSON.' },
-                            { role: 'user', content: safeguardPrompt }
+                            { role: 'user', content: `Refine this search. Current Decision: Needs Case Law = ${initialAnalysis.needs_precedent_search}\n\n` + safeguardPrompt }
                         ],
                         'Safeguard',
                         8192,
@@ -302,8 +305,10 @@ export async function POST(req: Request) {
                     let statuteChunks: any[] = [];
 
                     const fetchPrecedents = async () => {
-                        if (precedentQuery) {
+                        if (analysis.needs_precedent_search && precedentQuery) {
                             precedentSources = await searchCases(precedentQuery, 5);
+                        } else {
+                            console.log(`[Chat API] Skipping Precedent Search (Decision: false)`);
                         }
                     };
 
