@@ -133,6 +133,60 @@ async function generateNvidia(
     throw new Error(`${label} failed after all retries`);
 }
 
+async function fetchStatutesInternal(query: string) {
+    if (!query) return [];
+    try {
+        const queryEmbed = await pc.inference.embed({
+            model: 'llama-text-embed-v2',
+            inputs: [query],
+            parameters: { inputType: 'query', truncate: 'END' }
+        });
+        const statRes = await jurisIndex.query({
+            topK: 5,
+            vector: (queryEmbed.data[0] as any).values,
+            includeMetadata: true
+        });
+
+        if (statRes.matches) {
+            const primaryIds = statRes.matches.map((m: any) => m.id);
+            const neighborIds: string[] = [];
+
+            statRes.matches.forEach((m: any) => {
+                const act = m.metadata.act;
+                const num = parseInt(m.metadata.number);
+                if (!isNaN(num)) {
+                    if (num > 1) neighborIds.push(`${act}_${num - 1}`);
+                    neighborIds.push(`${act}_${num + 1}`);
+                }
+            });
+
+            const allUniqueIds = Array.from(new Set([...primaryIds, ...neighborIds]));
+            const fetchRes = await jurisIndex.fetch({ ids: allUniqueIds as string[] });
+
+            if (fetchRes.records) {
+                const recordList = Object.values(fetchRes.records);
+                return recordList.map((m: any) => ({
+                    sourceType: 'statute',
+                    retrievedContext: {
+                        act: m.metadata.act,
+                        number: parseInt(m.metadata.number) || 0,
+                        title: m.metadata.title,
+                        text: m.metadata.text
+                    }
+                })).sort((a, b) => {
+                    if (a.retrievedContext.act !== b.retrievedContext.act) {
+                        return a.retrievedContext.act.localeCompare(b.retrievedContext.act);
+                    }
+                    return a.retrievedContext.number - b.retrievedContext.number;
+                });
+            }
+        }
+    } catch (e) {
+        console.error("[Chat API] Pinecone search failed:", e);
+    }
+    return [];
+}
+
 export async function POST(req: Request) {
     try {
         const { messages, isResearch } = await req.json();
@@ -163,17 +217,29 @@ export async function POST(req: Request) {
                     };
 
                     try {
+                        const lastUserMessage = messages[messages.length - 1]?.content || "";
+                        console.log(`[Chat API] [Fast Path] Running Statute RAG for: "${lastUserMessage.substring(0, 50)}..."`);
+
+                        const statuteChunks = await fetchStatutesInternal(lastUserMessage);
+                        const groundedContext = statuteChunks.map((c: any, i: number) => {
+                            const ctx = c.retrievedContext;
+                            return `[[${i + 1}]] STATUTE: ${ctx.act} ${ctx.number} - ${ctx.title}\nText: ${ctx.text}`;
+                        }).join('\n\n---\n\n');
+
                         const systemPrompt = {
                             role: 'system',
                             content: `You are Juris, an elite legal AI assistant. Answer follow-up questions directly using the conversational context. 
                         
+                            ### ATTACHED STATUTORY CONTEXT:
+                            ${groundedContext || 'No specific statute found for this query.'}
+
                             ### FORMATTING RULES:
                             1. Use clear Markdown headers (###) for distinct sections where appropriate.
                             2. Use **bolding** for key legal terms and critical points.
                             3. Use bullet points for readability.
                             
                             ### CITATION RULES:
-                            Always cite sources exactly as [[n]] where n is the source number (e.g., [[1]]). 
+                            Always cite sources exactly as [[n]] where n is the source number (e.g., [[1]]) based on the 'ATTACHED STATUTORY CONTEXT' provided above.
                             
                             Do NOT hallucinate case laws.`
                         };
@@ -197,6 +263,9 @@ export async function POST(req: Request) {
                         }
 
                         sendChunk({ t: "\n\n---" });
+                        if (statuteChunks.length > 0) {
+                            sendChunk({ m: { groundingChunks: statuteChunks } });
+                        }
                         closeStream();
                     } catch (error: any) {
                         console.error('[Chat API] Follow-up Chat failed:', error.message);
@@ -320,62 +389,8 @@ export async function POST(req: Request) {
 
                     const fetchStatutes = async () => {
                         if (statuteQuery) {
-                            try {
-                                const queryEmbed = await pc.inference.embed({
-                                    model: 'llama-text-embed-v2',
-                                    inputs: [statuteQuery],
-                                    parameters: { inputType: 'query', truncate: 'END' }
-                                });
-                                const statRes = await jurisIndex.query({
-                                    topK: 5,
-                                    vector: (queryEmbed.data[0] as any).values,
-                                    includeMetadata: true
-                                });
-
-                                if (statRes.matches) {
-                                    const primaryIds = statRes.matches.map((m: any) => m.id);
-                                    const neighborIds: string[] = [];
-
-                                    // For each match, attempt to fetch neighbor IDs (N-1, N+1)
-                                    statRes.matches.forEach((m: any) => {
-                                        const act = m.metadata.act;
-                                        const num = parseInt(m.metadata.number);
-                                        if (!isNaN(num)) {
-                                            if (num > 1) neighborIds.push(`${act}_${num - 1}`);
-                                            neighborIds.push(`${act}_${num + 1}`);
-                                        }
-                                    });
-
-                                    // Batch fetch all required IDs (Primary + Neighbors)
-                                    const allUniqueIds = Array.from(new Set([...primaryIds, ...neighborIds]));
-                                    const fetchRes = await jurisIndex.fetch({ ids: allUniqueIds as string[] });
-
-                                    if (fetchRes.records) {
-                                        const recordList = Object.values(fetchRes.records);
-
-                                        // Deduplicate and group by Act for a logical flow
-                                        statuteChunks = recordList.map((m: any) => ({
-                                            sourceType: 'statute',
-                                            retrievedContext: {
-                                                act: m.metadata.act,
-                                                number: parseInt(m.metadata.number) || 0,
-                                                title: m.metadata.title,
-                                                text: m.metadata.text
-                                            }
-                                        }))
-                                            .sort((a, b) => {
-                                                if (a.retrievedContext.act !== b.retrievedContext.act) {
-                                                    return a.retrievedContext.act.localeCompare(b.retrievedContext.act);
-                                                }
-                                                return a.retrievedContext.number - b.retrievedContext.number;
-                                            });
-
-                                        console.log(`[Chat API] Pinecone Expanded Context: ${statuteChunks.length} sections retrieved (Primary + Neighbors).`);
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("[Chat API] Pinecone search failed:", e);
-                            }
+                            statuteChunks = await fetchStatutesInternal(statuteQuery);
+                            console.log(`[Chat API] Pinecone Expanded Context: ${statuteChunks.length} sections retrieved.`);
                         }
                     };
 
@@ -457,6 +472,7 @@ export async function POST(req: Request) {
                                 CRITICAL: Every numeric citation [[n]] MUST correspond EXACTLY to its index in the context list below. 
                                 Do NOT reuse numbers from previous turns. Verify the text inside [[n]] matches the source provided.`
                             },
+                            ...messages.map((m: any) => ({ role: m.role, content: m.content })),
                             { role: 'user', content: strategyPrompt }
                         ],
                         stream: true,
