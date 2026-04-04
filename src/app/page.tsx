@@ -604,7 +604,7 @@ export default function Home() {
               </motion.div>
             )}
           </AnimatePresence>
-          <div className={`w-full flex flex-col overflow-y-auto scroll-smooth flex-1 ${messages.length === 0 ? 'justify-end' : 'pt-4'}`}>
+          <div className={`w-full flex flex-col overflow-y-auto scroll-smooth flex-1 ${messages.length === 0 ? 'justify-center' : 'pt-4'}`}>
             <AnimatePresence mode="wait">
               {messages.length === 0 ? (
                 <motion.div
@@ -612,12 +612,19 @@ export default function Home() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  className="w-full max-w-[950px] mx-auto flex flex-col items-center text-center px-6 py-12"
+                  className="w-full max-w-[1100px] mx-auto flex flex-col items-center text-center px-6"
                 >
                   <h1 className="text-5xl md:text-7xl font-serif font-medium mb-4 tracking-tight text-slate-900">
                     Juris
                   </h1>
-                  <p className="text-lg md:text-xl text-slate-500 font-medium mb-8">How can I help you today?</p>
+                  <p className="text-lg md:text-xl text-slate-500 font-medium mb-10">How can I help you today?</p>
+
+                  <motion.div
+                    layoutId="chat-input-container"
+                    className="w-full max-w-[850px] mb-10"
+                  >
+                    {renderChatInput('landing')}
+                  </motion.div>
 
                   <div className="w-full flex flex-wrap justify-center gap-3">
                     {['Statutory Analysis', 'Procedural Guidance', 'BNS/BNSS/BSA Help', 'Case Precedents'].map((chip) => (
@@ -638,7 +645,7 @@ export default function Home() {
                   key="chat-history"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="w-full max-w-[950px] mx-auto flex flex-col gap-8 px-4 sm:px-6 pb-8"
+                  className="w-full max-w-[1100px] mx-auto flex flex-col gap-8 px-4 sm:px-6 pb-8"
                 >
                   {renderedMessages}
                   <div ref={messagesEndRef} />
@@ -647,19 +654,21 @@ export default function Home() {
             </AnimatePresence>
           </div>
 
-          <motion.div
-            layout
-            initial={false}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className={`w-full shrink-0 z-20 flex justify-center px-4 sm:px-6 bg-transparent ${messages.length === 0 ? '' : 'py-4'}`}
-          >
-            <div className="w-full max-w-[950px]">
-              {renderChatInput(messages.length === 0 ? 'landing' : 'chat')}
-            </div>
-          </motion.div>
+          {messages.length > 0 && (
+            <motion.div
+              layoutId="chat-input-container"
+              initial={false}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="w-full shrink-0 z-20 flex justify-center px-4 sm:px-6 bg-transparent py-4"
+            >
+              <div className="w-full max-w-[1100px]">
+                {renderChatInput('chat')}
+              </div>
+            </motion.div>
+          )}
 
           <AnimatePresence>
-            {/* Chips moved inside history container */}
+            {/* Chips moved inside header container */}
           </AnimatePresence>
         </div>
       </main>
