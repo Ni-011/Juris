@@ -9,7 +9,7 @@ async function test() {
             parameters: { inputType: 'passage', truncate: 'END' }
         });
         console.log("Success with object:", result);
-    } catch (e) {
+    } catch (e: any) {
         console.log("Error:", e.message);
     }
 }

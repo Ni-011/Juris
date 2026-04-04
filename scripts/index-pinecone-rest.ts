@@ -4,7 +4,7 @@ import { Pinecone } from '@pinecone-database/pinecone';
 
 require('dotenv').config();
 
-const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY as string });
+const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY as string }); // already has as string, but let's be consistent if it failed before
 const indexHost = process.env.PINECONE?.replace('https://', '') || 'juris-puen1s1.svc.aped-4627-b74a.pinecone.io';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));

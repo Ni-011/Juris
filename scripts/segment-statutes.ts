@@ -31,8 +31,8 @@ function segmentConstitution(text: string) {
     let match;
     const articles = [];
     let lastIndex = 0;
-    let lastArticle = null;
-    let lastTitle = null;
+    let lastArticle: string | null = null;
+    let lastTitle: string | null = null;
 
     while ((match = regex.exec(text)) !== null) {
         if (lastArticle) {
@@ -40,7 +40,7 @@ function segmentConstitution(text: string) {
                 act: 'Constitution',
                 type: 'Article',
                 number: lastArticle,
-                title: lastTitle.trim(),
+                title: lastTitle!.trim(),
                 content: text.substring(lastIndex, match.index).trim()
             });
         }
@@ -53,7 +53,7 @@ function segmentConstitution(text: string) {
             act: 'Constitution',
             type: 'Article',
             number: lastArticle,
-            title: lastTitle.trim(),
+            title: lastTitle!.trim(),
             content: text.substring(lastIndex).trim()
         });
     }
@@ -72,8 +72,8 @@ function segmentBNS(text: string, actName: string) {
     let match;
     const sections = [];
     let lastIndex = 0;
-    let lastArticle = null;
-    let lastTitle = null;
+    let lastArticle: string | null = null;
+    let lastTitle: string | null = null;
 
     while ((match = regex.exec(text)) !== null) {
         if (lastArticle) {
@@ -81,7 +81,7 @@ function segmentBNS(text: string, actName: string) {
                 act: actName,
                 type: 'Section',
                 number: lastArticle,
-                title: lastTitle.trim(),
+                title: lastTitle!.trim(),
                 content: text.substring(lastIndex, match.index).trim()
             });
         }
@@ -94,7 +94,7 @@ function segmentBNS(text: string, actName: string) {
             act: actName,
             type: 'Section',
             number: lastArticle,
-            title: lastTitle.trim(),
+            title: lastTitle!.trim(),
             content: text.substring(lastIndex).trim()
         });
     }
@@ -123,7 +123,7 @@ async function main() {
             const actSections = segmentBNS(cleanText(actText), act.name);
             fs.writeFileSync(path.join(docsDir, `segmented_${act.name}.json`), JSON.stringify(actSections, null, 2));
             console.log(`Saved ${actSections.length} ${act.name} sections.`);
-        } catch (e) {
+        } catch (e: any) {
             console.error(`Error processing ${act.name}:`, e);
         }
     }

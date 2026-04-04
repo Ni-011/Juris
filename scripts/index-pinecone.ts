@@ -4,7 +4,7 @@ import { Pinecone } from '@pinecone-database/pinecone';
 
 require('dotenv').config();
 
-const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 const index = pc.Index('juris'); // Name is juris as retrieved previously
 
 async function main() {
@@ -41,7 +41,7 @@ async function main() {
 
                 const vectors = chunk.map((seg: any, index: number) => ({
                     id: `${seg.act}_${seg.number}`,
-                    values: embedResult.data[index].values,
+                    values: (embedResult.data[index] as any).values,
                     metadata: {
                         act: seg.act,
                         type: seg.type,
@@ -53,7 +53,7 @@ async function main() {
 
                 await index.upsert(vectors);
                 console.log(`Upserted batch of ${vectors.length} records. (${i + vectors.length}/${segments.length})`);
-            } catch (err) {
+            } catch (err: any) {
                 console.error(`Failed to upscale batch at index ${i}`, err.message);
             }
         }
