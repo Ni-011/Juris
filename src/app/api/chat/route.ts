@@ -196,6 +196,7 @@ export async function POST(req: Request) {
                             if (content) sendChunk({ t: content });
                         }
 
+                        sendChunk({ t: "\n\n---" });
                         closeStream();
                     } catch (error: any) {
                         console.error('[Chat API] Follow-up Chat failed:', error.message);
@@ -237,11 +238,14 @@ export async function POST(req: Request) {
                                             1. Identify primary legal issues.
                                             2. Decide if a Case Law search is needed ('needs_precedent_search': true for factual scenarios, complex disputes, or case situations; false for direct statutory/constitutional questions).
                                             3. Generate ONE high-recall keyword search string for Landmark Precedents.
+                                            4. Identify the 'client_role' (e.g., "Tenant", "Accused", "Petitioner") and the 'opposing_party_role' (e.g., "Landlord", "State", "Respondent") based on the user's input and context.
 
                                             Return ONLY JSON using this exact schema:
                                             - legal_issues (array of strings)
                                             - needs_precedent_search (boolean)
                                             - precedent_search_keywords (string)
+                                            - client_role (string)
+                                            - opposing_party_role (string)
 
                                             JSON:`;
 
@@ -278,6 +282,8 @@ export async function POST(req: Request) {
                         - needs_precedent_search (boolean)
                         - precedent_search_keywords (string)
                         - statute_search_keywords (string)
+                        - client_role (string)
+                        - opposing_party_role (string)
 
                         JSON:`;
 
@@ -430,6 +436,15 @@ export async function POST(req: Request) {
                         LEGAL ISSUES:
                         ${analysis.legal_issues?.join(', ') || 'General legal research'}
 
+                        CLIENT ROLE (Represented by user):
+                        ${analysis.client_role || 'Unknown'}
+
+                        OPPOSING PARTY (Opponent):
+                        ${analysis.opposing_party_role || 'Unknown'}
+
+                        CRITICAL INSTRUCTION:
+                        Frame the strategy, winning arguments, and action plan EXCLUSIVELY to favor the CLIENT ROLE while identifying risks from the OPPOSING PARTY.
+
                         JUDICIAL PRECEDENTS & STATUTES:
                         ${unifiedTextContext || 'No context found.'}`;
                     console.log(`[Chat API] [Stage 3] Strategy Generation Starting (${STRATEGY_MODEL})...`);
@@ -455,7 +470,7 @@ export async function POST(req: Request) {
                         if (content) sendChunk({ t: content });
                     }
 
-                    sendChunk({ t: `\n\n---\n*Architecture: Kimi-K2-Thinking [Strategy] & Kimi-K2-Instruct-0905 [Analyzer] via NVIDIA API. Grounded with Vaquill Case Law & Pinecone Statutes.*` });
+                    sendChunk({ t: `\n\n---` });
                     sendChunk({ m: { groundingChunks: allChunks, researchSummary: initialAnalysis } });
                     closeStream();
 

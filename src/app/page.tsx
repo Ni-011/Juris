@@ -33,7 +33,7 @@ const SequentialLoader = () => {
   const steps = [
     { text: "Analyzing case context...", icon: <Search className="h-4 w-4" /> },
     { text: "Identifying legal issues...", icon: <Scale className="h-4 w-4" /> },
-    { text: "Hunting for precedents (Vaquill AI)...", icon: <Zap className="h-4 w-4" /> },
+    { text: "Hunting for precedents...", icon: <Zap className="h-4 w-4" /> },
     { text: "Generating argument strategy...", icon: <Sparkles className="h-4 w-4" /> },
     { text: "Finalizing legal partner briefing...", icon: <Briefcase className="h-4 w-4" /> }
   ];
@@ -81,7 +81,7 @@ const SequentialLoader = () => {
             </motion.span>
           </AnimatePresence>
           <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest mt-0.5">
-            Juris Research Engine v3.1
+            Advanced Research Engine
           </span>
         </div>
       </div>
@@ -116,6 +116,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isMounted, setIsMounted] = React.useState(false);
   const [isResearchEnabled, setIsResearchEnabled] = React.useState(true);
+  const [activeCitation, setActiveCitation] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setIsMounted(true);
@@ -391,9 +392,20 @@ export default function Home() {
                             ? `Bench: ${ctx.judges.join(', ')}`
                             : '';
 
+                          const citationKey = `${msg.id}-${chunkIdx}`;
+                          const isCitationOpen = activeCitation === citationKey;
+
                           return (
-                            <Tooltip>
-                              <TooltipTrigger render={<span />} className="inline-flex items-center justify-center min-w-[22px] h-[18px] bg-indigo-50/80 border border-indigo-200/50 hover:bg-indigo-100 hover:border-indigo-300 rounded-md text-indigo-700 text-[10px] font-bold mx-1 align-baseline cursor-pointer shadow-sm transition-all hover:scale-105">
+                            <Tooltip open={isCitationOpen || undefined} onOpenChange={(open) => !open && setActiveCitation(null)}>
+                              <TooltipTrigger
+                                render={<span />}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setActiveCitation(isCitationOpen ? null : citationKey);
+                                }}
+                                className="inline-flex items-center justify-center min-w-[22px] h-[18px] bg-indigo-50/80 border border-indigo-200/50 hover:bg-indigo-100 hover:border-indigo-300 rounded-md text-indigo-700 text-[10px] font-bold mx-1 align-baseline cursor-pointer shadow-sm transition-all hover:scale-105"
+                              >
                                 {children}
                               </TooltipTrigger>
                               <TooltipContent
@@ -522,7 +534,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-[#FAFAFA] overflow-hidden">
+    <div className="flex h-dvh w-full bg-[#FAFAFA] overflow-hidden">
       <AppSidebar />
       <input
         type="file"
@@ -592,7 +604,7 @@ export default function Home() {
               </motion.div>
             )}
           </AnimatePresence>
-          <div className={`w-full flex flex-col overflow-y-auto scroll-smooth ${messages.length === 0 ? 'flex-1 justify-end pb-8' : 'flex-1 pt-4 pb-8'}`}>
+          <div className={`w-full flex flex-col overflow-y-auto scroll-smooth flex-1 ${messages.length === 0 ? 'justify-end' : 'pt-4'}`}>
             <AnimatePresence mode="wait">
               {messages.length === 0 ? (
                 <motion.div
@@ -600,19 +612,33 @@ export default function Home() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  className="w-full max-w-[950px] mx-auto flex flex-col items-center text-center px-6"
+                  className="w-full max-w-[950px] mx-auto flex flex-col items-center text-center px-6 py-12"
                 >
                   <h1 className="text-5xl md:text-7xl font-serif font-medium mb-4 tracking-tight text-slate-900">
                     Juris
                   </h1>
-                  <p className="text-lg md:text-xl text-slate-500 font-medium mb-2">How can I help you today?</p>
+                  <p className="text-lg md:text-xl text-slate-500 font-medium mb-8">How can I help you today?</p>
+
+                  <div className="w-full flex flex-wrap justify-center gap-3">
+                    {['Statutory Analysis', 'Procedural Guidance', 'BNS/BNSS/BSA Help', 'Case Precedents'].map((chip) => (
+                      <Button
+                        key={chip}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setInput(chip)}
+                        className="rounded-full px-4 h-9 text-[13px] font-medium text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer"
+                      >
+                        {chip}
+                      </Button>
+                    ))}
+                  </div>
                 </motion.div>
               ) : (
                 <motion.div
                   key="chat-history"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="w-full max-w-[950px] mx-auto flex flex-col gap-8 px-4 sm:px-6"
+                  className="w-full max-w-[950px] mx-auto flex flex-col gap-8 px-4 sm:px-6 pb-8"
                 >
                   {renderedMessages}
                   <div ref={messagesEndRef} />
@@ -633,29 +659,7 @@ export default function Home() {
           </motion.div>
 
           <AnimatePresence>
-            {messages.length === 0 && (
-              <motion.div
-                key="landing-chips"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20, transition: { duration: 0.1 } }}
-                className="w-full flex-1 flex flex-col justify-start pt-8 px-6"
-              >
-                <div className="w-full max-w-[950px] mx-auto flex flex-wrap justify-center gap-3">
-                  {['Statutory Analysis', 'Procedural Guidance', 'BNS/BNSS/BSA Help', 'Case Precedents'].map((chip) => (
-                    <Button
-                      key={chip}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setInput(chip)}
-                      className="rounded-full px-4 h-9 text-[13px] font-medium text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer"
-                    >
-                      {chip}
-                    </Button>
-                  ))}
-                </div>
-              </motion.div>
-            )}
+            {/* Chips moved inside history container */}
           </AnimatePresence>
         </div>
       </main>
