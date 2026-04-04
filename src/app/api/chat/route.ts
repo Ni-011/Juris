@@ -305,14 +305,14 @@ export async function POST(req: Request) {
                     const analyzerPrompt = `Analyze the context for exhaustive CASE LAW research.
                                             Tasks:
                                             1. Identify primary legal issues.
-                                            2. Decide if a Case Law search is needed ('needs_precedent_search': true for factual scenarios, complex disputes, or case situations; false for direct statutory/constitutional questions).
-                                            3. Generate ONE high-recall keyword search string for Landmark Precedents.
-                                            4. Identify the 'client_role' (e.g., "Tenant", "Accused", "Petitioner") and the 'opposing_party_role' (e.g., "Landlord", "State", "Respondent") based on the user's input and context.
+                                            2. Decide if a Case Law search is needed ('needs_precedent_search': true).
+                                            3. Generate EXACTLY 3-4 CORE keywords for Landmark Precedents. KEEP IT SPARSE.
+                                            4. Identify roles.
 
-                                            Return ONLY JSON using this exact schema:
-                                            - legal_issues (array of strings)
+                                            Return ONLY JSON:
+                                            - legal_issues (array)
                                             - needs_precedent_search (boolean)
-                                            - precedent_search_keywords (string)
+                                            - precedent_search_keywords (string: "key1 key2 key3")
                                             - client_role (string)
                                             - opposing_party_role (string)
 
@@ -333,21 +333,23 @@ export async function POST(req: Request) {
                     console.log(`[Chat API] Analyzer output:`, JSON.stringify(initialAnalysis, null, 2));
 
                     console.log(`[Chat API] [Stage 2] Safeguard Starting...`);
-                    const safeguardPrompt = `Refine this Case Law search query for maximum judicial recall.
+                    const safeguardPrompt = `Refine this Case Law search query for MAXIMUM JUDICIAL RECALL.
                         
                         LEGAL ISSUES:
                         ${initialAnalysis.legal_issues?.join(', ') || 'General legal research'}
 
-                        CRITICAL RESEARCH RULES:
-                        1. AVOID OVER-CONSTRAINING.
-                        2. PREFER "OR" for broader recall.
-                        3. NO IMPLICIT "AND" OVERLOAD.
+                        CRITICAL RESEARCH RULES (The 3-Word Rule):
+                        1. EXTREME SPARSITY: Use only 2-4 high-impact keywords.
+                        2. AVOID OVER-CONSTRAINING. Every additional word joined by implicit AND reduces results by 90%.
+                        3. PREFER "OR" for synonyms: (concealment OR dissipation) instead of mandatory terms.
+                        4. NO NOISE: Remove "of", "the", "in", "divorce", "case", "law" unless essential.
 
-                        KEEP THE QUERY CONCISE (under 300 characters).
+                        GOOD QUERY: "(concealment OR dissipation) alimony"
+                        BAD QUERY: "fraudulent transfer to avoid alimony in divorce proceedings"
 
-                        Return REFINED JSON using EXACTLY this schema structure:
+                        Return REFINED JSON:
                         - detailed_legal_reasoning (string)
-                        - legal_issues (array of strings)
+                        - legal_issues (array)
                         - needs_precedent_search (boolean)
                         - precedent_search_keywords (string)
                         - statute_search_keywords (string)
@@ -358,8 +360,8 @@ export async function POST(req: Request) {
 
                     const safeguardText = await generateNvidia(
                         [
-                            { role: 'system', content: 'You are a legal research safeguards agent. Refine Case Law and Statute queries. Respond ONLY with JSON.' },
-                            { role: 'user', content: `Refine this search. Current Decision: Needs Case Law = ${initialAnalysis.needs_precedent_search}\n\n` + safeguardPrompt }
+                            { role: 'system', content: 'You are a legal research safeguards agent. Refine Case Law and Statute queries. Respond ONLY with JSON. CRITICAL: PRESERVE the client_role and opposing_party_role exactly as provided.' },
+                            { role: 'user', content: `Refine this search. \nCLIENT: ${initialAnalysis.client_role}\nOPPONENT: ${initialAnalysis.opposing_party_role}\nNeeds Case Law = ${initialAnalysis.needs_precedent_search}\n\n` + safeguardPrompt }
                         ],
                         'Safeguard',
                         8192,
@@ -430,7 +432,7 @@ export async function POST(req: Request) {
                     }).join('\n\n---\n\n');
 
                     // ── Call 3: Strategy Generator ──────────────────
-                    const strategyPrompt = `You are Juris, a senior legal strategist. Generate a highly explanatory, premium, and actionable legal strategy based EXCLUSIVELY on the provided statutes and precedents.
+                    const strategyPrompt = `You are Juris, a senior legal strategist. Generate a highly explanatory, premium, and FIERCELY ADVOCATIVE legal strategy based EXCLUSIVELY on the provided statutes and precedents.
                         ### FORMATTING RULES:
                         1. Use clear Markdown headers (###) for each section.
                         2. Use **bolding** for key legal terms.
@@ -441,24 +443,24 @@ export async function POST(req: Request) {
                         - You must cite the statutes when analyzing the rules, and cite precedents when analyzing court application.
                         
                         ### RESPONSE STRUCTURE:
-                        ### 1. Statutory Grounding
-                        ### 2. Case Similarities
-                        ### 3. Winning Arguments
-                        ### 4. Pitfalls & Counter-Arguments
-                        ### 5. Action Plan
+                        ### 1. Statutory Grounding (Favoring Client)
+                        ### 2. Case Similarities (Leveraging Precedents for Client)
+                        ### 3. Winning Arguments (Primary Offensive/Defensive Strategy)
+                        ### 4. Counter-Argument Neutralization (How to defeat the Opponent)
+                        ### 5. Tactical Action Plan
 
                         ---
                         LEGAL ISSUES:
                         ${analysis.legal_issues?.join(', ') || 'General legal research'}
 
-                        CLIENT ROLE (Represented by user):
+                        CLIENT ROLE (We are working FOR this person):
                         ${analysis.client_role || 'Unknown'}
 
-                        OPPOSING PARTY (Opponent):
+                        OPPOSING PARTY (The Adversary):
                         ${analysis.opposing_party_role || 'Unknown'}
 
                         CRITICAL INSTRUCTION:
-                        Frame the strategy, winning arguments, and action plan EXCLUSIVELY to favor the CLIENT ROLE while identifying risks from the OPPOSING PARTY.
+                        Frame every single sentence, strategy, and winning argument to favor the CLIENT ROLE. Identify risks from the OPPOSING PARTY only to provide rebuttals and neutralization tactics. Do NOT provide a balanced view; provide a winning partisan strategy for our client.
 
                         JUDICIAL PRECEDENTS & STATUTES:
                         ${unifiedTextContext || 'No context found.'}`;
@@ -468,9 +470,10 @@ export async function POST(req: Request) {
                         messages: [
                             {
                                 role: 'system',
-                                content: `You are Juris, an elite legal strategist. Use ONLY the provided context. 
+                                content: `You are Juris, an elite legal strategist and fierce advocate. Your ONLY mission is to build a winning case for the identified CLIENT. 
+                                Use ONLY the provided context. 
                                 CRITICAL: Every numeric citation [[n]] MUST correspond EXACTLY to its index in the context list below. 
-                                Do NOT reuse numbers from previous turns. Verify the text inside [[n]] matches the source provided.`
+                                Re-verify that every argument you make is supported by the context but framed to bolster the client's position.`
                             },
                             ...messages.map((m: any) => ({ role: m.role, content: m.content })),
                             { role: 'user', content: strategyPrompt }

@@ -20,8 +20,8 @@
   --card-foreground: #0f172a;
   --popover: #ffffff;
   --popover-foreground: #0f172a;
-  --primary: #5c7cfa;
-  /* More structured, professional blue */
+  --primary: #0f172a;
+  /* Premium Navy/Slate Primary */
   --primary-foreground: #ffffff;
   --secondary: #f1f5f9;
   --secondary-foreground: #475569;
@@ -38,12 +38,12 @@
 
   --sidebar: #ffffff;
   --sidebar-foreground: #475569;
-  --sidebar-primary: #5c7cfa;
+  --sidebar-primary: #0f172a;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f1f5f9;
   --sidebar-accent-foreground: #0f172a;
   --sidebar-border: #f1f5f9;
-  --sidebar-ring: #5c7cfa;
+  --sidebar-ring: #0f172a;
 }
 
 @theme {
