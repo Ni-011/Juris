@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
 import { searchCases } from '@/lib/vaquill';
 import { Pinecone } from '@pinecone-database/pinecone';
+import { parsePDF } from '@/lib/pdf-parser';
 
 // Initialize NVIDIA client
 const nvidia = new OpenAI({
@@ -189,12 +190,28 @@ async function fetchStatutesInternal(query: string) {
 
 export async function POST(req: Request) {
     try {
-        const { messages, isResearch } = await req.json();
+        const { messages, isResearch, attachments } = await req.json();
 
         // Use regex to dynamically strip out previously injected System Context blocks to save thousands of tokens 
         const sanitizeContent = (content: string) => {
             return content.replace(/\[SYSTEM CONTEXT - RESEARCH FOUND\]:[\s\S]*?\[MY STRATEGY\]:\n/g, '');
         };
+
+        // --- ATTACHMENT PROCESSING ---
+        let attachmentContext = "";
+        if (attachments && attachments.length > 0) {
+            console.log(`[Chat API] Processing ${attachments.length} attachments...`);
+            for (const att of attachments) {
+                if (att.type === 'application/pdf' && att.base64) {
+                    try {
+                        const text = await parsePDF(att.base64);
+                        attachmentContext += `\n### USER DOCUMENT: ${att.name}\n${text}\n---\n`;
+                    } catch (e) {
+                        console.error(`[Chat API] Failed to parse PDF ${att.name}:`, e);
+                    }
+                }
+            }
+        }
 
         // Build a readable conversation history
         const conversationHistory = messages.map((m: any) => `${m.role.toUpperCase()}: ${sanitizeContent(m.content)}`).join('\n\n---\n\n');
@@ -302,6 +319,7 @@ export async function POST(req: Request) {
 
                 try {
                     console.log(`[Chat API] [Stage 1] Analyzer Starting...`);
+                    sendChunk({ s: "Analyzing case context..." });
                     const analyzerPrompt = `Analyze the context for exhaustive CASE LAW research.
                                             Tasks:
                                             1. Identify primary legal issues.
@@ -321,7 +339,7 @@ export async function POST(req: Request) {
                     const analyzerText = await generateNvidia(
                         [
                             { role: 'system', content: 'You are a senior legal analyst. Structure the search query based on legal issues. Respond ONLY with JSON.' },
-                            { role: 'user', content: analyzerPrompt + "\n\nFULL CONVERSATION CONTEXT:\n" + conversationHistory }
+                            { role: 'user', content: analyzerPrompt + "\n\nFULL CONVERSATION CONTEXT:\n" + conversationHistory + (attachmentContext ? "\n\nATTACHED USER DOCUMENTS:\n" + attachmentContext : "") }
                         ],
                         'Analyzer',
                         8192,
@@ -333,18 +351,18 @@ export async function POST(req: Request) {
                     console.log(`[Chat API] Analyzer output:`, JSON.stringify(initialAnalysis, null, 2));
 
                     console.log(`[Chat API] [Stage 2] Safeguard Starting...`);
+                    sendChunk({ s: "Safeguarding search intent..." });
                     const safeguardPrompt = `Refine this Case Law search query for MAXIMUM JUDICIAL RECALL.
                         
                         LEGAL ISSUES:
                         ${initialAnalysis.legal_issues?.join(', ') || 'General legal research'}
 
-                        CRITICAL RESEARCH RULES (The 3-Word Rule):
-                        1. EXTREME SPARSITY: Use only 2-4 high-impact keywords.
-                        2. AVOID OVER-CONSTRAINING. Every additional word joined by implicit AND reduces results by 90%.
-                        3. PREFER "OR" for synonyms: (concealment OR dissipation) instead of mandatory terms.
-                        4. NO NOISE: Remove "of", "the", "in", "divorce", "case", "law" unless essential.
+                        CRITICAL RESEARCH RULES (Lenient Boolean):
+                        1. USE "OR" FOR SYNONYMS: To increase recall, group similar terms with OR and parentheses.
+                        2. EXTREME SPARSITY: Limit to 2-3 concept groups. Do NOT use explicit "AND" (space is enough).
+                        3. NO NOISE: Remove "of", "the", "in", "divorce", "case", "law" unless essential.
 
-                        GOOD QUERY: "(concealment OR dissipation) alimony"
+                        GOOD QUERY: "(concealment OR dissipation OR "hidden assets") alimony"
                         BAD QUERY: "fraudulent transfer to avoid alimony in divorce proceedings"
 
                         Return REFINED JSON:
@@ -370,19 +388,30 @@ export async function POST(req: Request) {
 
                     const analysis = JSON.parse(repairJson(safeguardText));
                     console.log(`[Chat API] [Stage 2] Safeguard Finished.`);
+                    sendChunk({ s: `Refining keywords: ${analysis.precedent_search_keywords}...` });
                     console.log(`[Chat API] Safeguard output:`, JSON.stringify(analysis, null, 2));
 
-                    // ── Vaquill & Pinecone Search Concurrently ────────
-                    const precedentQuery = ensureString(analysis.precedent_search_keywords || analysis.legal_issues || '').trim();
-                    const statuteQuery = ensureString(analysis.statute_search_keywords || analysis.legal_issues || '').trim();
-                    console.log(`[Chat API] Precedent Query: ${precedentQuery}`);
-                    console.log(`[Chat API] Statute Query: ${statuteQuery}`);
+                    // Sanitize queries to allow Lenient Booleans (OR, parentheses) for higher recall
+                    const sanitizeSearchQuery = (q: string) => {
+                        return q.replace(/\bAND\b/g, ' ') // Remove explicit AND (implicit space is better)
+                                .replace(/\bNOT\b/gi, ' ') // Remove NOT (tends to be too restrictive)
+                                .replace(/["']/g, '') // Remove quotes unless explicitly needed
+                                .replace(/\s+/g, ' ') // Collapse spaces
+                                .trim();
+                    };
+
+                    const precedentQuery = sanitizeSearchQuery(ensureString(analysis.precedent_search_keywords || analysis.legal_issues || ''));
+                    const statuteQuery = sanitizeSearchQuery(ensureString(analysis.statute_search_keywords || analysis.legal_issues || ''));
+                    
+                    console.log(`[Chat API] Precedent Query (Lenient Boolean): ${precedentQuery}`);
+                    console.log(`[Chat API] Statute Query (Lenient Boolean): ${statuteQuery}`);
 
                     let precedentSources: any[] = [];
                     let statuteChunks: any[] = [];
 
                     const fetchPrecedents = async () => {
                         if (analysis.needs_precedent_search && precedentQuery) {
+                            sendChunk({ s: `Searching Precedents for "${precedentQuery}"...` });
                             precedentSources = await searchCases(precedentQuery, 5);
                         } else {
                             console.log(`[Chat API] Skipping Precedent Search (Decision: false)`);
@@ -391,6 +420,7 @@ export async function POST(req: Request) {
 
                     const fetchStatutes = async () => {
                         if (statuteQuery) {
+                            sendChunk({ s: `Retrieving Statutes for "${statuteQuery}"...` });
                             statuteChunks = await fetchStatutesInternal(statuteQuery);
                             console.log(`[Chat API] Pinecone Expanded Context: ${statuteChunks.length} sections retrieved.`);
                         }
@@ -398,6 +428,7 @@ export async function POST(req: Request) {
 
                     await Promise.all([fetchPrecedents(), fetchStatutes()]);
                     console.log(`[Chat API] Found ${precedentSources.length} precedents, ${statuteChunks.length} statutes.`);
+                    sendChunk({ s: "Synthesizing legal logic..." });
 
                     const unifiedPrecedentChunks = precedentSources.map((p: any) => {
                         const rawText = p.summary || p.snippet || p.excerpt || '';
@@ -463,8 +494,12 @@ export async function POST(req: Request) {
                         Frame every single sentence, strategy, and winning argument to favor the CLIENT ROLE. Identify risks from the OPPOSING PARTY only to provide rebuttals and neutralization tactics. Do NOT provide a balanced view; provide a winning partisan strategy for our client.
 
                         JUDICIAL PRECEDENTS & STATUTES:
-                        ${unifiedTextContext || 'No context found.'}`;
+                        ${unifiedTextContext || 'No context found.'}
+
+                        USER'S ATTACHED DOCUMENTS:
+                        ${attachmentContext || 'No additional documents provided.'}`;
                     console.log(`[Chat API] [Stage 3] Strategy Generation Starting (${STRATEGY_MODEL})...`);
+                    sendChunk({ s: "Finalizing Juris briefing..." });
                     const strategyStream = await nvidia.chat.completions.create({
                         model: STRATEGY_MODEL,
                         messages: [
@@ -485,7 +520,9 @@ export async function POST(req: Request) {
                     for await (const chunk of strategyStream) {
                         const delta = chunk.choices?.[0]?.delta as any;
                         const content = delta?.content;
+                        const reasoning = delta?.reasoning_content;
 
+                        if (reasoning) sendChunk({ r: reasoning });
                         if (content) sendChunk({ t: content });
                     }
 

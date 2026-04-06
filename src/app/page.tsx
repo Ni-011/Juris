@@ -14,6 +14,7 @@ import {
   FileText,
   ArrowUp,
   ChevronDown,
+  ChevronUp,
   Sparkles,
   ExternalLink,
   BookOpen,
@@ -29,74 +30,210 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 
-// Premium Sequential Loader representing the legal research process
-const SequentialLoader = () => {
-  const [step, setStep] = React.useState(0);
-  const steps = [
-    { text: "Analyzing case context..." },
-    { text: "Identifying legal issues..." },
-    { text: "Searching statutes & precedents..." },
-    { text: "Synthesizing legal logic..." },
-    { text: "Finalizing Juris briefing..." }
-  ];
 
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setStep((prev) => (prev < steps.length - 1 ? prev + 1 : prev));
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [steps.length]);
 
-  return (
-    <div className="flex flex-col gap-2 py-3 w-full animate-in fade-in duration-500">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center justify-center w-5 h-5">
-          <motion.div
-            animate={{ 
-              scale: [1, 1.2, 1],
-              opacity: [0.4, 1, 0.4] 
-            }}
-            transition={{ 
-              duration: 2, 
-              repeat: Infinity, 
-              ease: "easeInOut" 
-            }}
-            className="h-1.5 w-1.5 rounded-full bg-slate-400"
-          />
-        </div>
-        <div className="flex flex-col">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 4 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -4 }}
-              transition={{ duration: 0.3 }}
-              className="flex items-center gap-2"
-            >
-              <span className="text-[13px] font-medium text-slate-500 tracking-tight italic">
-                {steps[step].text}
-              </span>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </div>
-    </div>
-  );
-};
 
-// Helper to process citations in the format [[n]] into links for ReactMarkdown
-const processCitations = (content: string) => {
-  return content.replace(/\[\[\s*(\d+)\s*\]\]/g, (match, n) => {
+// Helper to process citations and fix model markdown quirks
+const processMarkdownContent = (content: string) => {
+  if (!content) return '';
+  let processed = content.replace(/\[\[\s*(\d+)\s*\]\]/g, (match, n) => {
     return ` [${n}](#cite-${n})`;
   });
+  // Fix missing spaces in headings (e.g. ###Heading -> ### Heading)
+  processed = processed.replace(/^(#{1,6})(?=[^\s#])/gm, '$1 ');
+  // Unescape API-escaped asterisks and hashes
+  processed = processed.replace(/\\\*/g, '*').replace(/\\#/g, '#');
+  return processed;
+};
+
+// Robust copy-to-clipboard utility with fallback for non-secure contexts
+const copyToClipboard = async (text: string) => {
+  if (typeof window === 'undefined') return false;
+  
+  // Try modern Clipboard API first
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.warn("Modern Clipboard API failed, attempting fallback:", err);
+    }
+  }
+
+  // Fallback to legacy execCommand('copy')
+  try {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    
+    // Ensure it's not visible or affecting layout
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "0";
+    textArea.style.opacity = "0";
+    
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch (err) {
+    console.error("Copy fallback failed:", err);
+    return false;
+  }
+};
+
+const ThinkingBlock = ({
+  msg,
+  isLoading,
+  currentStatus,
+  currentReasoning,
+  expandedThinking,
+  setExpandedThinking
+}: any) => {
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  
+  const isCurrentlyThinking = isLoading && msg.content === '' && (currentReasoning || currentStatus);
+  const savedReasoning = msg.metadata?.reasoning;
+  const isStreamingWithThought = isLoading && msg.content !== '' && currentReasoning;
+  
+  if (!isCurrentlyThinking && !savedReasoning && !isStreamingWithThought) return null;
+  
+  const reasoningText = savedReasoning || currentReasoning;
+  const isExpanded = expandedThinking[msg.id] ?? isCurrentlyThinking ?? isStreamingWithThought;
+  const isLive = isLoading && (msg.content === '' || isStreamingWithThought);
+
+  React.useEffect(() => {
+    if (isExpanded && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [reasoningText, isExpanded]);
+
+  return (
+    <div className="mb-4">
+      {/* Live Pipeline Status — only while waiting for text */}
+      {isLive && !savedReasoning && (
+        <div className="flex items-center gap-3 mb-3">
+          <div className="relative flex items-center justify-center">
+            <motion.div
+              animate={{
+                scale: [1, 1.5, 1],
+                opacity: [0.3, 0.6, 0.3]
+              }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute h-3 w-3 rounded-full bg-slate-900"
+            />
+            <div className="h-1.5 w-1.5 rounded-full bg-slate-900 relative z-10" />
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={currentStatus || 'init'}
+              initial={{ opacity: 0, x: 5 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -5 }}
+              transition={{ duration: 0.3 }}
+              className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.15em]"
+            >
+              {currentStatus || "Analyzing case context..."}
+            </motion.span>
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Collapsible Thinking Block */}
+      {reasoningText && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all duration-200"
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpandedThinking((prev: any) => ({ ...prev, [msg.id]: !isExpanded }));
+            }}
+            className="w-full flex items-center justify-between px-4 py-2 hover:bg-slate-50 transition-colors cursor-pointer group"
+          >
+            <div className="flex items-center gap-2">
+              <span className={`text-[12px] font-medium transition-colors ${isLive ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-700'}`}>
+                {isLive ? 'Thinking' : 'Reasoning'}
+              </span>
+              {isLive && (
+                <div className="flex gap-1 ml-1 items-center h-full">
+                  {[0, 1, 2].map(i => (
+                    <motion.div
+                      key={i}
+                      animate={{ opacity: [0.3, 1, 0.3] }}
+                      transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2 }}
+                      className="h-1 w-1 rounded-full bg-slate-900"
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-center text-slate-400 group-hover:text-slate-600 transition-colors">
+              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </button>
+
+          <AnimatePresence initial={false}>
+            {isExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+              >
+                <div className="px-4 pb-3 border-t border-slate-100">
+                  <div 
+                    ref={scrollRef}
+                    className={`text-[13px] leading-relaxed text-slate-500 font-sans pt-3 break-words ${isLive ? 'max-h-[300px]' : 'max-h-[400px]'} overflow-y-auto custom-scrollbar`}
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h1: ({children}) => <strong className="text-slate-700 block mt-3 mb-1 text-[14px]">{children}</strong>,
+                          h2: ({children}) => <strong className="text-slate-700 block mt-3 mb-1 text-[13px]">{children}</strong>,
+                          h3: ({children}) => <strong className="text-slate-700 block mt-2 mb-1 text-[13px]">{children}</strong>,
+                          ul: ({children}) => <ul className="list-disc ml-5 mb-2">{children}</ul>,
+                          ol: ({children}) => <ol className="list-decimal ml-5 mb-2">{children}</ol>,
+                          li: ({children}) => <li className="mb-0.5">{children}</li>,
+                          p: ({children}) => <p className="mb-2 last:mb-0 inline">{children} </p>,
+                          strong: ({children}) => <strong className="font-semibold text-slate-700">{children}</strong>,
+                        }}
+                      >
+                        {reasoningText}
+                      </ReactMarkdown>
+                      {isLive && (
+                        <div>
+                          <motion.span
+                            animate={{ opacity: [1, 0] }}
+                            transition={{ duration: 0.8, repeat: Infinity }}
+                            className="inline-block w-1 h-3 bg-slate-400 ml-1 align-middle"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      )}
+    </div>
+  );
 };
 
 export default function Home() {
   const [files, setFiles] = React.useState<{ name: string, type: string }[]>([]);
   const [isDragging, setIsDragging] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const isAtBottomRef = React.useRef(true);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const [messages, setMessages] = React.useState<{ id: string, role: 'user' | 'assistant', content: string, metadata?: any }[]>([]);
@@ -111,6 +248,9 @@ export default function Home() {
   const [isMobile, setIsMobile] = React.useState(false);
 
   const [isInputFocused, setIsInputFocused] = React.useState(false);
+  const [currentStatus, setCurrentStatus] = React.useState<string | null>(null);
+  const [currentReasoning, setCurrentReasoning] = React.useState<string>("");
+  const [expandedThinking, setExpandedThinking] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     setIsMounted(true);
@@ -138,7 +278,7 @@ export default function Home() {
       const viewport = window.visualViewport;
       if (!viewport) return;
 
-      const threshold = 0.95; 
+      const threshold = 0.95;
       const isKeyboardClosed = viewport.height >= window.innerHeight * threshold;
 
       if (isKeyboardClosed && isInputFocused) {
@@ -154,20 +294,60 @@ export default function Home() {
     return () => viewport.removeEventListener('resize', handleVisualViewportResize);
   }, [isInputFocused]);
 
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      const scrollContainer = messagesEndRef.current.parentElement?.parentElement;
-      if (scrollContainer) {
-        scrollContainer.scrollTo({
-          top: scrollContainer.scrollHeight,
-          behavior: 'smooth'
-        });
-      }
+  // Lock all scrolling when mobile keyboard is open on landing page
+  React.useEffect(() => {
+    const shouldLock = isMobile && isInputFocused && messages.length === 0;
+    if (!shouldLock) return;
+
+    // Lock body/html scrolling
+    const scrollY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    // Block all touch-based scrolling
+    const preventScroll = (e: TouchEvent) => {
+      // Allow touches inside the textarea itself
+      if (textareaRef.current && textareaRef.current.contains(e.target as Node)) return;
+      e.preventDefault();
+    };
+
+    document.addEventListener('touchmove', preventScroll, { passive: false });
+
+    return () => {
+      document.removeEventListener('touchmove', preventScroll);
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      window.scrollTo(0, scrollY);
+    };
+  }, [isMobile, isInputFocused, messages.length]);
+
+  const scrollToBottom = (force = false) => {
+    if (scrollContainerRef.current && (isAtBottomRef.current || force)) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: force ? 'smooth' : 'auto'
+      });
+    }
+  };
+
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+      const atBottom = scrollHeight - clientHeight <= scrollTop + 300;
+      isAtBottomRef.current = atBottom;
     }
   };
 
   React.useEffect(() => {
-    const timeoutId = setTimeout(scrollToBottom, 50);
+    const timeoutId = setTimeout(() => scrollToBottom(), 50);
     return () => clearTimeout(timeoutId);
   }, [messages, isLoading]);
 
@@ -176,8 +356,29 @@ export default function Home() {
 
     const userMessage = { id: Date.now().toString(), role: 'user' as const, content: input };
     setMessages(prev => [...prev, userMessage]);
+
+    // Force scroll to bottom for user message
+    setTimeout(() => scrollToBottom(true), 10);
+
+    // Convert files to base64 for the research pipeline
+    const fileAttachments = await Promise.all(
+      files.map(async (f: any) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({
+            name: f.name,
+            type: f.type,
+            base64: (reader.result as string).split(',')[1]
+          });
+          reader.readAsDataURL(f as any);
+        });
+      })
+    );
+
     setInput("");
     setIsLoading(true);
+    setCurrentStatus("Initializing Juris research...");
+    setCurrentReasoning("");
 
     try {
       const assistantId = (Date.now() + 1).toString();
@@ -200,7 +401,8 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: requestMessages,
-          isResearch: isResearchEnabled
+          isResearch: isResearchEnabled,
+          attachments: fileAttachments
         }),
       });
 
@@ -210,6 +412,7 @@ export default function Home() {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let localReasoning = ""; // Track reasoning locally to avoid React batching hooks inside setState
 
       if (reader) {
         while (true) {
@@ -226,12 +429,24 @@ export default function Home() {
               const data = JSON.parse(line);
 
               if (data.t) {
+                // On first text token, save accumulated reasoning onto the message
                 setMessages(prev => prev.map(msg =>
-                  msg.id === assistantId ? { ...msg, content: msg.content + data.t } : msg
+                  msg.id === assistantId && !msg.metadata?.reasoning && localReasoning
+                    ? { ...msg, content: msg.content + data.t, metadata: { ...msg.metadata, reasoning: localReasoning } }
+                    : msg.id === assistantId
+                      ? { ...msg, content: msg.content + data.t }
+                      : msg
                 ));
+                setCurrentStatus(null); // Clear status once we start getting text
+              } else if (data.s) {
+                setCurrentStatus(data.s);
+              } else if (data.r) {
+                localReasoning += data.r;
+                setCurrentReasoning(localReasoning);
+                setCurrentStatus("Juris is thinking...");
               } else if (data.m) {
                 setMessages(prev => prev.map(msg =>
-                  msg.id === assistantId ? { ...msg, metadata: data.m } : msg
+                  msg.id === assistantId ? { ...msg, metadata: { ...(msg.metadata || {}), ...data.m } } : msg
                 ));
               }
             } catch (e) {
@@ -244,6 +459,8 @@ export default function Home() {
       console.error("Error sending message:", error);
     } finally {
       setIsLoading(false);
+      setCurrentReasoning("");
+      setCurrentStatus(null);
       setFiles([]);
     }
   };
@@ -395,13 +612,22 @@ export default function Home() {
                 setIsCopied(false);
               }
             }}
-            className={`px-4 py-3 rounded-2xl max-w-[95%] sm:max-w-[85%] text-[15px] leading-relaxed transition-all cursor-pointer select-none ${msg.role === 'user'
-              ? 'bg-slate-100 text-slate-900 rounded-br-sm hover:bg-slate-200/80 active:scale-[0.98]'
-              : 'bg-transparent text-slate-800'
-              }`}
+            className={`px-4 py-3 rounded-2xl ${msg.role === 'user' ? 'max-w-[95%] sm:max-w-[85%] bg-slate-100 text-slate-900 rounded-br-sm hover:bg-slate-200/80 active:scale-[0.98]' : 'w-full sm:max-w-[95%] bg-transparent text-slate-800'} text-[15px] leading-relaxed transition-all cursor-pointer select-none`}
           >
             {msg.role === 'assistant' && <div className="font-bold text-slate-900 mb-2 flex items-center gap-2"><div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white font-serif text-[10px]">J</div> Juris</div>}
             <div className="markdown-prose text-inherit">
+              {/* — Thinking Block: visible while loading OR if reasoning was saved — */}
+              {msg.role === 'assistant' && (
+                <ThinkingBlock
+                  msg={msg}
+                  isLoading={isLoading}
+                  currentStatus={currentStatus}
+                  currentReasoning={currentReasoning}
+                  expandedThinking={expandedThinking}
+                  setExpandedThinking={setExpandedThinking}
+                />
+              )}
+
               {msg.role === 'assistant' ? (
                 <>
                   <ReactMarkdown
@@ -430,17 +656,46 @@ export default function Home() {
                           );
                         }
                         return <a href={href} className="text-blue-600 hover:underline" {...props}>{children}</a>;
-                      }
+                      },
+                      table: ({ children }) => (
+                        <div className="w-full overflow-hidden border border-slate-200 rounded-xl my-4 shadow-sm">
+                          <table className="w-full text-sm text-left table-fixed">
+                            {children}
+                          </table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-slate-50 border-b border-slate-200">{children}</thead>,
+                      th: ({ children }) => <th className="px-3 sm:px-4 py-3 font-semibold text-slate-700 break-words border-r border-slate-100 last:border-0">{children}</th>,
+                      tr: ({ children }) => <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">{children}</tr>,
+                      td: ({ children }) => <td className="px-3 sm:px-4 py-3 break-words text-slate-600 align-top border-r border-slate-100 last:border-0">{children}</td>,
                     }}
                   >
-                    {processCitations(msg.content)}
+                    {processMarkdownContent(msg.content)}
                   </ReactMarkdown>
+                  {/* Minimal loading indicator when text hasn't started yet and no reasoning */}
+                  {isLoading && msg.content === '' && !currentReasoning && !currentStatus && (
+                    <div className="flex items-center gap-2 py-2">
+                      <motion.div
+                        animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                        className="h-1.5 w-1.5 rounded-full bg-slate-400"
+                      />
+                      <span className="text-[13px] text-slate-400 italic">Initializing Juris research...</span>
+                    </div>
+                  )}
                 </>
               ) : (
-                <p className="whitespace-pre-wrap">{msg.content}</p>
-              )}
-              {isLoading && msg.role === 'assistant' && msg.content === '' && (
-                <SequentialLoader />
+                <div className="markdown-prose text-inherit whitespace-pre-wrap">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0 inline">{children}</p>,
+                      a: ({ href, children, ...props }) => <a href={href} className="text-blue-600 hover:underline" {...props}>{children}</a>,
+                    }}
+                  >
+                    {processMarkdownContent(msg.content)}
+                  </ReactMarkdown>
+                </div>
               )}
             </div>
           </div>
@@ -457,11 +712,7 @@ export default function Home() {
                   size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                      navigator.clipboard.writeText(msg.content);
-                    } else {
-                      console.warn("Clipboard API not available");
-                    }
+                    copyToClipboard(msg.content);
                     setIsCopied(true);
                     setTimeout(() => {
                       setIsCopied(false);
@@ -479,7 +730,7 @@ export default function Home() {
         </div>
       ))}
     </>
-  ), [messages, isLoading, copyingId, isCopied, isMobile]);
+  ), [messages, isLoading, copyingId, isCopied, isMobile, currentStatus, currentReasoning, expandedThinking]);
 
   if (!isMounted) {
     return <div className="flex h-screen w-full bg-white overflow-hidden" />;
@@ -511,7 +762,7 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-3 shrink-0">
               <Button
-                variant="ghost" 
+                variant="ghost"
                 size="sm"
                 onClick={() => setMessages([])}
                 className="h-9 w-9 p-0 text-slate-400 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-all cursor-pointer"
@@ -553,15 +804,13 @@ export default function Home() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-            <motion.div 
-              layout
-              transition={{ type: "spring", stiffness: 400, damping: 40 }}
-              className={`w-full flex flex-col overflow-y-auto scroll-smooth flex-1 transition-all duration-300 ${
-                messages.length === 0 
-                  ? (isMobile && isInputFocused ? 'justify-start pt-12 pb-32' : 'justify-center') 
-                  : 'pt-4'
-              }`}
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              className={`w-full flex flex-col flex-1 ${messages.length === 0
+                ? (isMobile && isInputFocused ? 'overflow-hidden justify-start pt-12 pb-32' : 'overflow-y-auto justify-center')
+                : 'overflow-y-auto pt-4'
+                }`}
             >
               <AnimatePresence mode="wait">
                 {messages.length === 0 ? (
@@ -612,18 +861,17 @@ export default function Home() {
                 ) : (
                   <motion.div
                     key="chat-history"
-                    layout
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 40 }}
+                    transition={{ duration: 0.2 }}
                     className="w-full max-w-[1100px] mx-auto flex flex-col gap-8 px-4 sm:px-6 pb-8"
                   >
                     {renderedMessages}
-                    <div ref={messagesEndRef} />
+                    <div className="h-4 shrink-0" />
                   </motion.div>
                 )}
               </AnimatePresence>
-            </motion.div>
+            </div>
 
             {messages.length > 0 && (
               <motion.div
@@ -666,7 +914,7 @@ export default function Home() {
                     onClick={() => setIsCitationVisible(false)}
                     className="absolute inset-0 bg-slate-900/10 backdrop-blur-sm pointer-events-auto"
                   />
-                  
+
                   <motion.div
                     initial={isMobile ? { y: '100%' } : { opacity: 0, y: 20, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -678,15 +926,12 @@ export default function Home() {
                     <div className="bg-white px-8 pt-8 pb-5 flex flex-col gap-4 sticky top-0 z-10 border-b border-slate-50">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className={`text-[8px] font-bold uppercase tracking-[0.2em] px-2 py-1 rounded-full border ${isPrecedent
-                            ? 'bg-slate-900 text-white border-slate-900'
-                            : 'bg-amber-50 text-amber-800 border-amber-100'
-                            }`}>
-                            {isPrecedent ? 'Judgment' : 'Statute'}
+                          <span className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-slate-500">
+                            {isPrecedent ? 'Case Precedent' : 'Statute Reference'}
                           </span>
                         </div>
                         <Button
-                          variant="ghost" 
+                          variant="ghost"
                           size="icon"
                           onClick={() => setIsCitationVisible(false)}
                           className="h-8 w-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors"
@@ -737,11 +982,7 @@ export default function Home() {
                         size="sm"
                         onClick={() => {
                           const text = ctx.text || "";
-                          if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                            navigator.clipboard.writeText(`${displayTitle}\n\n${text}`);
-                          } else {
-                            console.warn("Clipboard API not available");
-                          }
+                          copyToClipboard(`${displayTitle}\n\n${text}`);
                           setIsCopied(true);
                           setTimeout(() => setIsCopied(false), 2000);
                         }}
