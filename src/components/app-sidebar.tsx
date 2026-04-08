@@ -13,7 +13,8 @@ import {
     Search,
     Layout,
     ChevronDown,
-    PanelLeft
+    PanelLeft,
+    FileSignature
 } from "lucide-react";
 import Link from 'next/link';
 
@@ -32,7 +33,8 @@ import {
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-    { title: "Assistant", icon: MessageSquare, active: true },
+    { title: "Assistant", icon: MessageSquare, active: true, href: "/" },
+    { title: "Draft", icon: FileSignature, href: "/draft" },
     {
         title: "Vault",
         icon: Folder,
@@ -68,6 +70,7 @@ export function AppSidebar() {
 
                 <Button
                     className="w-full justify-center gap-2 bg-white hover:bg-slate-50 text-slate-900 border border-slate-200 shadow-sm h-9 px-4 transition-all rounded-lg hover:scale-105 active:scale-95 cursor-pointer"
+                    onClick={() => window.location.href = '/'}
                 >
                     <Plus className="h-3.5 w-3.5" />
                     <span className="text-[13px] font-medium group-data-[collapsible=icon]:hidden">Create</span>
@@ -78,16 +81,18 @@ export function AppSidebar() {
                 <SidebarMenu className="gap-0.5">
                     {navItems.map((item) => (
                         <SidebarMenuItem key={item.title}>
-                            <SidebarMenuButton
-                                isActive={item.active}
-                                className={`gap-3 py-2 px-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${item.active
-                                    ? "bg-slate-100 text-slate-900 font-semibold"
-                                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                                    }`}
-                            >
-                                <item.icon className={`h-4 w-4 ${item.active ? "text-slate-900" : "text-slate-500"}`} />
-                                <span className="text-[13px]">{item.title}</span>
-                            </SidebarMenuButton>
+                            <Link href={item.href || "#"} className="w-full">
+                                <SidebarMenuButton
+                                    isActive={item.active}
+                                    className={`gap-3 py-2 px-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer w-full ${item.active
+                                        ? "bg-slate-100 text-slate-900 font-semibold"
+                                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                                        }`}
+                                >
+                                    <item.icon className={`h-4 w-4 ${item.active ? "text-slate-900" : "text-slate-500"}`} />
+                                    <span className="text-[13px]">{item.title}</span>
+                                </SidebarMenuButton>
+                            </Link>
 
                             {item.items && (
                                 <div className="ml-9 mt-1 space-y-1 overflow-hidden group-data-[collapsible=icon]:hidden">

@@ -29,6 +29,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
 
 
 
@@ -602,7 +603,7 @@ export default function Home() {
       {messages.map((msg) => (
         <div
           key={msg.id}
-          className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} transition-all duration-200`}
+          className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} transition-all duration-200 group/msg`}
         >
           <div
             onClick={(e) => {
@@ -612,11 +613,42 @@ export default function Home() {
                 setIsCopied(false);
               }
             }}
-            className={`px-4 py-3 rounded-2xl ${msg.role === 'user' ? 'max-w-[95%] sm:max-w-[85%] bg-slate-100 text-slate-900 rounded-br-sm hover:bg-slate-200/80 active:scale-[0.98]' : 'w-full sm:max-w-[95%] bg-transparent text-slate-800'} text-[15px] leading-relaxed transition-all cursor-pointer select-none`}
+            className={cn(
+               "px-4 py-3 rounded-2xl text-[15px] leading-relaxed transition-all relative",
+               msg.role === 'user' 
+                ? "max-w-[90%] bg-slate-100 text-slate-900 rounded-br-sm hover:bg-slate-200/80 active:scale-[0.99] cursor-pointer shadow-sm" 
+                : "max-w-[95%] bg-slate-50/50 border border-slate-100/50 text-slate-800 rounded-bl-sm"
+            )}
           >
-            {msg.role === 'assistant' && <div className="font-bold text-slate-900 mb-2 flex items-center gap-2"><div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white font-serif text-[10px]">J</div> Juris</div>}
+            {msg.role === 'assistant' && (
+              <div className="flex items-center justify-between mb-3">
+                <div className="font-bold text-slate-900 flex items-center gap-2">
+                  <div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white font-serif text-[10px]">J</div>
+                  Juris
+                </div>
+                {!isLoading && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyToClipboard(msg.content);
+                      setCopyingId(msg.id);
+                      setIsCopied(true);
+                      setTimeout(() => {
+                        setIsCopied(false);
+                        setCopyingId(null);
+                      }, 2000);
+                    }}
+                    className="h-7 w-7 opacity-0 group-hover/msg:opacity-100 transition-all text-slate-400 hover:text-slate-900 rounded-lg hover:bg-white border border-transparent hover:border-slate-100 shadow-sm"
+                  >
+                    {copyingId === msg.id && isCopied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                )}
+              </div>
+            )}
+            
             <div className="markdown-prose text-inherit">
-              {/* — Thinking Block: visible while loading OR if reasoning was saved — */}
               {msg.role === 'assistant' && (
                 <ThinkingBlock
                   msg={msg}
@@ -628,79 +660,67 @@ export default function Home() {
                 />
               )}
 
-              {msg.role === 'assistant' ? (
-                <>
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: ({ node, href, children, ...props }) => {
-                        if (href && href.startsWith('#cite-')) {
-                          const chunkPart = href.replace('#cite-', '');
-                          const chunkIdx = parseInt(chunkPart, 10) - 1;
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  p: ({ children }) => <p className={cn("mb-3 last:mb-0 leading-relaxed", msg.role === 'user' && "inline")}>{children}</p>,
+                  a: ({ node, href, children, ...props }) => {
+                    if (href && href.startsWith('#cite-')) {
+                      const chunkPart = href.replace('#cite-', '');
+                      const chunkIdx = parseInt(chunkPart, 10) - 1;
 
-                          const chunk = msg.metadata?.groundingChunks?.[chunkIdx];
-                          if (!chunk) return <a href={href} {...props}>{children}</a>;
+                      const chunk = msg.metadata?.groundingChunks?.[chunkIdx];
+                      if (!chunk) return <a href={href} {...props}>{children}</a>;
 
-                          return (
-                            <span
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setActiveCitationData(chunk);
-                                setIsCitationVisible(true);
-                              }}
-                              className="inline-flex items-center justify-center min-w-[22px] h-[18px] bg-slate-100 border border-slate-200 hover:bg-slate-200 hover:border-slate-300 rounded-md text-slate-700 text-[10px] font-bold mx-1 align-baseline cursor-pointer shadow-sm transition-all hover:scale-105 active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
-                            >
-                              {children}
-                            </span>
-                          );
-                        }
-                        return <a href={href} className="text-blue-600 hover:underline" {...props}>{children}</a>;
-                      },
-                      table: ({ children }) => (
-                        <div className="w-full overflow-hidden border border-slate-200 rounded-xl my-4 shadow-sm">
-                          <table className="w-full text-sm text-left table-fixed">
-                            {children}
-                          </table>
-                        </div>
-                      ),
-                      thead: ({ children }) => <thead className="bg-slate-50 border-b border-slate-200">{children}</thead>,
-                      th: ({ children }) => <th className="px-3 sm:px-4 py-3 font-semibold text-slate-700 break-words border-r border-slate-100 last:border-0">{children}</th>,
-                      tr: ({ children }) => <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">{children}</tr>,
-                      td: ({ children }) => <td className="px-3 sm:px-4 py-3 break-words text-slate-600 align-top border-r border-slate-100 last:border-0">{children}</td>,
-                    }}
-                  >
-                    {processMarkdownContent(msg.content)}
-                  </ReactMarkdown>
-                  {/* Minimal loading indicator when text hasn't started yet and no reasoning */}
-                  {isLoading && msg.content === '' && !currentReasoning && !currentStatus && (
-                    <div className="flex items-center gap-2 py-2">
-                      <motion.div
-                        animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }}
-                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                        className="h-1.5 w-1.5 rounded-full bg-slate-400"
-                      />
-                      <span className="text-[13px] text-slate-400 italic">Initializing Juris research...</span>
+                      return (
+                        <span
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setActiveCitationData(chunk);
+                            setIsCitationVisible(true);
+                          }}
+                          className="inline-flex items-center justify-center min-w-[22px] h-[18px] bg-slate-100 border border-slate-200 hover:bg-slate-200 hover:border-slate-300 rounded-md text-slate-700 text-[10px] font-bold mx-1 align-baseline cursor-pointer shadow-sm transition-all hover:scale-105 active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                        >
+                          {children}
+                        </span>
+                      );
+                    }
+                    return <a href={href} className="text-blue-600 hover:underline" {...props}>{children}</a>;
+                  },
+                  table: ({ children }) => (
+                    <div className="w-full overflow-hidden border border-slate-200 rounded-xl my-4 shadow-sm bg-white">
+                      <table className="w-full text-sm text-left table-fixed">
+                        {children}
+                      </table>
                     </div>
-                  )}
-                </>
-              ) : (
-                <div className="markdown-prose text-inherit whitespace-pre-wrap">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p: ({ children }) => <p className="mb-2 last:mb-0 inline">{children}</p>,
-                      a: ({ href, children, ...props }) => <a href={href} className="text-blue-600 hover:underline" {...props}>{children}</a>,
-                    }}
-                  >
-                    {processMarkdownContent(msg.content)}
-                  </ReactMarkdown>
+                  ),
+                  thead: ({ children }) => <thead className="bg-slate-50 border-b border-slate-200">{children}</thead>,
+                  th: ({ children }) => <th className="px-3 sm:px-4 py-3 font-semibold text-slate-700 break-words border-r border-slate-100 last:border-0 uppercase text-[10px] tracking-widest">{children}</th>,
+                  tr: ({ children }) => <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">{children}</tr>,
+                  td: ({ children }) => <td className="px-3 sm:px-4 py-3 break-words text-slate-600 align-top border-r border-slate-100 last:border-0">{children}</td>,
+                  strong: ({ children }) => <strong className="font-bold text-slate-900">{children}</strong>,
+                }}
+              >
+                {processMarkdownContent(msg.content)}
+              </ReactMarkdown>
+
+              {/* Minimal loading indicator when text hasn't started yet and no reasoning */}
+              {isLoading && msg.role === 'assistant' && msg.content === '' && !currentReasoning && !currentStatus && (
+                <div className="flex items-center gap-2 py-2">
+                  <motion.div
+                    animate={{ scale: [1, 1.2, 1], opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    className="h-1.5 w-1.5 rounded-full bg-slate-400"
+                  />
+                  <span className="text-[13px] text-slate-400 italic">Initializing Juris research...</span>
                 </div>
               )}
             </div>
           </div>
+          
           <AnimatePresence mode="wait">
-            {copyingId === msg.id && msg.role === 'user' && (
+            {copyingId === msg.id && msg.role === 'user' && !isCopied && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -721,8 +741,8 @@ export default function Home() {
                   }}
                   className="h-7 px-2.5 text-[11px] font-bold text-slate-500 hover:text-slate-900 gap-1.5 bg-white border border-slate-200/60 rounded-xl shadow-sm transition-all hover:scale-105 active:scale-[0.98]"
                 >
-                  {isCopied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-                  {isCopied ? "Copied" : "Copy text"}
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy text
                 </Button>
               </motion.div>
             )}
