@@ -341,7 +341,6 @@ export default function Home() {
       </div>
     </Card>
   );
-
   const renderedMessages = React.useMemo(() => (
     <TooltipProvider delay={200}>
       {messages.map((msg) => (

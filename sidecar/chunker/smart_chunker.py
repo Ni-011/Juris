@@ -113,7 +113,12 @@ def smart_chunk(
             })
 
     # ── Post-processing: Merge under-sized chunks ──
+    original_chunk_count = len(chunks)
     chunks = _merge_small_chunks(chunks, min_tokens, max_tokens)
+    
+    print(f"[Smart Chunker] Collapsed {original_chunk_count} raw chunks into {len(chunks)} final chunks")
+    for i, c in enumerate(chunks):
+        print(f"  -> Chunk {i+1} ({c['chunk_type']}): {c.get('token_count', 0)} tokens")
 
     return chunks
 

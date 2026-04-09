@@ -8,6 +8,20 @@ from typing import Optional
 try:
     import pytesseract
     from PIL import Image
+    import os
+    
+    # Auto-resolve Tesseract path for Windows users without needing PATH modifications
+    if os.name == "nt":
+        tess_paths = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            r"C:\Users\Asus\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
+        ]
+        for p in tess_paths:
+            if os.path.exists(p):
+                pytesseract.pytesseract.tesseract_cmd = p
+                break
+
     HAS_OCR = True
 except ImportError:
     HAS_OCR = False

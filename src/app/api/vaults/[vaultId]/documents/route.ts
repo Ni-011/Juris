@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { documents, vaults, ingestionJobs } from "@/drizzle/schema";
 import { eq } from "drizzle-orm";
-import { uploadFile } from "@/lib/supabase-storage";
+import { generateReadUrl } from "@/lib/supabase-storage";
 import { processDocumentFull } from "@/lib/pipeline";
 import { createHash } from "crypto";
 
@@ -18,7 +18,7 @@ function getDocType(
   if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) return "pdf";
   if (
     mimeType ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     fileName.endsWith(".docx")
   )
     return "docx";
@@ -69,23 +69,18 @@ export async function POST(req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Vault not found" }, { status: 404 });
     }
 
-    // Parse multipart form data
-    const formData = await req.formData();
-    const files = formData.getAll("files") as File[];
-    const customMetadataRaw = formData.get("metadata") as string | null;
-
-    let customMetadata: Record<string, unknown> | null = null;
-    if (customMetadataRaw) {
-      try {
-        customMetadata = JSON.parse(customMetadataRaw);
-      } catch {
-        /* ignore bad metadata */
-      }
-    }
+    const body = await req.json();
+    const files = body.files as Array<{
+      fileName: string;
+      fileType: string;
+      fileSize: number;
+      storagePath: string;
+    }>;
+    const customMetadata = body.metadata || null;
 
     if (!files || files.length === 0) {
       return NextResponse.json(
-        { error: "No files provided. Use 'files' field name in formData." },
+        { error: "No files provided in completion request." },
         { status: 400 }
       );
     }
@@ -109,39 +104,30 @@ export async function POST(req: Request, { params }: RouteParams) {
 
     for (const file of files) {
       try {
-        // Read file into buffer
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        // Naive duplicate check proxy since file buffer isn't passed through backend anymore
+        const checksumProxy = `${file.fileName}_${file.fileSize}`;
 
-        // Compute SHA-256 checksum
-        const checksum = createHash("sha256").update(buffer).digest("hex");
-
-        // Check for duplicate (same vault + same checksum)
+        // Check for duplicate
         const existingDocs = await db
           .select()
           .from(documents)
           .where(eq(documents.vaultId, vaultId));
 
-        const duplicate = existingDocs.find((d) => d.checksum === checksum);
+        const duplicate = existingDocs.find((d) => d.checksum === checksumProxy);
         if (duplicate) {
           createdDocs.push({
             id: duplicate.id,
-            fileName: file.name,
+            fileName: file.fileName,
             status: `duplicate_of:${duplicate.id}`,
           });
           continue;
         }
 
         // Detect document type
-        const docType = getDocType(file.type, file.name);
+        const docType = getDocType(file.fileType, file.fileName);
 
-        // Upload to Supabase Storage
-        const { storagePath, storageUrl } = await uploadFile(
-          buffer,
-          file.name,
-          vaultId,
-          file.type || "application/octet-stream"
-        );
+        // Generate the read URL now that the file actually exists
+        const storageUrl = await generateReadUrl(file.storagePath);
 
         // Create document record
         const [doc] = await db
@@ -149,12 +135,12 @@ export async function POST(req: Request, { params }: RouteParams) {
           .values({
             vaultId,
             tenantId: vault.tenantId,
-            fileName: file.name,
+            fileName: file.fileName,
             docType,
-            fileSize: buffer.length,
-            storagePath,
+            fileSize: file.fileSize,
+            storagePath: file.storagePath,
             storageUrl,
-            checksum,
+            checksum: checksumProxy,
             customMetadata,
           })
           .returning();
@@ -166,8 +152,6 @@ export async function POST(req: Request, { params }: RouteParams) {
         });
 
         // Fire-and-forget: process document asynchronously
-        // This is the key: the upload response returns immediately,
-        // while processing happens in the background
         processDocumentFull(doc.id).catch((err) => {
           console.error(
             `[Upload] Background processing failed for ${doc.id}:`,
@@ -175,7 +159,7 @@ export async function POST(req: Request, { params }: RouteParams) {
           );
         });
       } catch (fileError: any) {
-        errors.push({ fileName: file.name, error: fileError.message });
+        errors.push({ fileName: file.fileName, error: fileError.message });
       }
     }
 

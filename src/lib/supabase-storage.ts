@@ -9,11 +9,11 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const BUCKET_NAME = "juris-documents";
 
 /**
- * Upload a raw file buffer to Supabase Storage.
+ * Upload a file or buffer to Supabase Storage.
  * Returns the storage path and a signed URL.
  */
 export async function uploadFile(
-  buffer: Buffer,
+  fileData: Buffer | File,
   fileName: string,
   vaultId: string,
   contentType: string
@@ -22,7 +22,7 @@ export async function uploadFile(
 
   const { data, error } = await supabase.storage
     .from(BUCKET_NAME)
-    .upload(storagePath, buffer, {
+    .upload(storagePath, fileData, {
       contentType,
       upsert: false,
     });
@@ -95,3 +95,29 @@ export async function deleteVaultFiles(vaultId: string): Promise<void> {
     }
   }
 }
+
+/**
+ * Generate a pre-signed URL for direct client-side uploads.
+ */
+export async function generateUploadUrl(fileName: string, vaultId: string): Promise<{ storagePath: string; uploadUrl: string }> {
+  const storagePath = `${vaultId}/${Date.now()}_${fileName}`;
+  const { data, error } = await supabase.storage.from(BUCKET_NAME).createSignedUploadUrl(storagePath);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(`Failed to create signed upload URL: ${error?.message || "No URL"}`);
+  }
+
+  return { storagePath, uploadUrl: data.signedUrl };
+}
+
+/**
+ * Generate a 7-day pre-signed URL for reading a file that already exists.
+ */
+export async function generateReadUrl(storagePath: string): Promise<string> {
+  const { data, error } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+  if (error || !data?.signedUrl) {
+    throw new Error(`Failed to create signed read URL: ${error?.message || "No URL"}`);
+  }
+  return data.signedUrl;
+}
+

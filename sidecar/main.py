@@ -7,7 +7,6 @@ Runs locally alongside the Next.js app on port 8100.
 Usage:
     uvicorn main:app --host 0.0.0.0 --port 8100 --reload
 """
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -193,3 +192,8 @@ def _get_suffix(doc_type: str) -> str:
         "csv": ".csv",
         "image": ".png",
     }.get(doc_type, ".bin")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8100, reload=True)
+

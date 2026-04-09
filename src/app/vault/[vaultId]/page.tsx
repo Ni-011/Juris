@@ -136,6 +136,7 @@ export default function VaultDetailPage() {
     }
   }, [vaultId]);
 
+  //safe practice if just in useEffect then this is okay else this is not okay
   React.useEffect(() => {
     fetchVault();
     fetchDocuments();
@@ -165,17 +166,60 @@ export default function VaultDetailPage() {
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      Array.from(files).forEach((f) => formData.append("files", f));
+      const fileArray = Array.from(files);
 
-      const res = await fetch(`/api/vaults/${vaultId}/documents`, {
+      // Step 1: Get presigned URLs
+      const intentRes = await fetch(`/api/vaults/${vaultId}/documents/presigned`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          files: fileArray.map(f => ({ fileName: f.name, fileType: f.type, fileSize: f.size }))
+        })
       });
 
-      if (res.ok) {
-        fetchDocuments();
-        fetchVault();
+      if (!intentRes.ok) throw new Error("Failed to get upload URLs");
+      const { urls } = await intentRes.json();
+
+      console.log(urls);
+
+      // Step 2: Upload directly to Supabase
+      const uploadedFiles = [];
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
+        const urlData = urls.find((u: any) => u.fileName === file.name);
+        if (!urlData) continue;
+
+        const uploadRes = await fetch(urlData.uploadUrl, {
+          method: "PUT",
+          body: file,
+          headers: {
+            "Content-Type": file.type || "application/octet-stream"
+          }
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error(`Failed to upload ${file.name}`);
+        }
+
+        uploadedFiles.push({
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          storagePath: urlData.storagePath,
+        });
+      }
+
+      // Step 3: Complete ingestion
+      if (uploadedFiles.length > 0) {
+        const res = await fetch(`/api/vaults/${vaultId}/documents`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ files: uploadedFiles })
+        });
+        if (res.ok) {
+          fetchDocuments();
+          fetchVault();
+        }
       }
     } catch (e) {
       console.error("Upload failed:", e);
@@ -411,9 +455,8 @@ export default function VaultDetailPage() {
           <div className="flex-[3] flex flex-col overflow-hidden min-w-0">
             {/* Upload zone */}
             <div
-              className={`mx-4 mt-4 upload-zone ${
-                isDragging ? "drag-active" : ""
-              }`}
+              className={`mx-4 mt-4 upload-zone ${isDragging ? "drag-active" : ""
+                }`}
               onDragOver={(e) => {
                 e.preventDefault();
                 setIsDragging(true);
@@ -600,16 +643,14 @@ export default function VaultDetailPage() {
                     key={msg.id}
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${
-                      msg.role === "user" ? "justify-end" : "justify-start"
-                    }`}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
+                      }`}
                   >
                     <div
-                      className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed ${
-                        msg.role === "user"
-                          ? "bg-slate-100 text-slate-900 rounded-br-sm"
-                          : "bg-white border border-slate-100 text-slate-700 rounded-bl-sm shadow-sm"
-                      }`}
+                      className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed ${msg.role === "user"
+                        ? "bg-slate-100 text-slate-900 rounded-br-sm"
+                        : "bg-white border border-slate-100 text-slate-700 rounded-bl-sm shadow-sm"
+                        }`}
                     >
                       {msg.role === "assistant" && (
                         <div className="flex items-center gap-1.5 mb-2">

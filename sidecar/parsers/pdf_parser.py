@@ -43,17 +43,28 @@ def parse_pdf(
         # Try text extraction first
         text = page.get_text("text").strip()
 
-        # If the page has very little text, it might be scanned
-        if len(text) < 50 and ocr_fallback:
-            # Render page to image and OCR it
-            try:
-                pix = page.get_pixmap(dpi=300)
-                img_bytes = pix.tobytes("png")
-                ocr_text = ocr_page_image(img_bytes, language=language)
-                if ocr_text and len(ocr_text.strip()) > 10:
-                    text = ocr_text
-            except Exception as e:
-                print(f"[PDF Parser] OCR fallback failed for page {page_num + 1}: {e}")
+        # If the page has very little text OR contains images, we should OCR it.
+        # This handles "mixed" PDFs where native text is present alongside scanned charts/documents.
+        if ocr_fallback:
+            images = page.get_images()
+            print(f"[PDF Parser] Page {page_num + 1}: Extracted {len(text)} native chars, {len(images)} images")
+            
+            if len(text) < 50 or len(images) > 0:
+                # Render page to image and OCR it
+                try:
+                    pix = page.get_pixmap(dpi=300)
+                    img_bytes = pix.tobytes("png")
+                    ocr_text = ocr_page_image(img_bytes, language=language)
+                    
+                    if ocr_text and len(ocr_text.strip()) > 10:
+                        print(f"[PDF Parser] Page {page_num + 1}: OCR extracted {len(ocr_text)} chars")
+                        # OCR on 300dpi is highly accurate and will cleanly capture both 
+                        # the native vector text AND the nested images as one unified text block.
+                        text = ocr_text
+                    else:
+                        print(f"[PDF Parser] Page {page_num + 1}: OCR returned no significant text")
+                except Exception as e:
+                    print(f"[PDF Parser] OCR fallback failed for page {page_num + 1}: {e}")
 
         if not text.strip():
             continue

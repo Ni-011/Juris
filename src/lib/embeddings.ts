@@ -23,19 +23,20 @@ export interface EmbeddingResult {
 }
 
 /**
- * Generate embeddings for a single text string.
+ * Generate embeddings for a single text string (typically a search query).
  */
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const results = await generateEmbeddings([text]);
+export async function generateEmbedding(text: string, inputType: "query" | "passage" = "query"): Promise<number[]> {
+  const results = await generateEmbeddings([text], inputType);
   return results[0].embedding;
 }
 
 /**
- * Generate embeddings for a batch of texts.
+ * Generate embeddings for a batch of texts (typically document chunks).
  * Handles batching automatically to stay within API limits.
  */
 export async function generateEmbeddings(
-  texts: string[]
+  texts: string[],
+  inputType: "query" | "passage" = "passage"
 ): Promise<EmbeddingResult[]> {
   const allResults: EmbeddingResult[] = [];
 
@@ -56,6 +57,9 @@ export async function generateEmbeddings(
           model: EMBEDDING_MODEL,
           input: safeBatch,
           encoding_format: "float",
+          // @ts-expect-error NVIDIA NIM specific fields
+          input_type: inputType,
+          truncate: "END"
         });
 
         for (const item of response.data) {
