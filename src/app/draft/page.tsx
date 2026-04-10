@@ -19,7 +19,8 @@ import {
     ChevronDown,
     LayoutGrid,
     Sparkles,
-    FileSignature
+    FileSignature,
+    Loader2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -63,13 +64,101 @@ export default function DraftPage() {
     const router = useRouter();
     const [selectedDocId, setSelectedDocId] = React.useState('affidavit');
     const [activeCategory, setActiveCategory] = React.useState('litigation');
+    const [draftInstructions, setDraftInstructions] = React.useState('');
+    const [isGenerating, setIsGenerating] = React.useState(false);
+    const [generationStatus, setGenerationStatus] = React.useState('Initializing...');
+    const [generationReasoning, setGenerationReasoning] = React.useState('');
+    const reasoningRef = React.useRef<HTMLDivElement>(null);
 
-    const handleGenerate = () => {
-        router.push('/draft/editor');
+    React.useEffect(() => {
+        if (reasoningRef.current) {
+            reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
+        }
+    }, [generationReasoning]);
+
+    const handleGenerate = async () => {
+        if (!draftInstructions.trim() && !selectedDocId) return;
+        
+        setIsGenerating(true);
+        setGenerationStatus("Starting pipeline...");
+        setGenerationReasoning("");
+        
+        try {
+            const finalInstruction = draftInstructions.trim() || `Draft a standard ${docTypes.find(d => d.id === selectedDocId)?.title || selectedDocId} using common boilerplate.`;
+            
+            const res = await fetch('/api/draft/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    docType: docTypes.find(d => d.id === selectedDocId)?.title || selectedDocId,
+                    instructions: finalInstruction
+                })
+            });
+
+            if (!res.body) throw new Error("No response body");
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let fullDraftHtml = "";
+            let buffer = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                let boundary = buffer.indexOf('\n');
+
+                while (boundary !== -1) {
+                    const line = buffer.slice(0, boundary).trim();
+                    buffer = buffer.slice(boundary + 1);
+                    boundary = buffer.indexOf('\n');
+
+                    if (!line) continue;
+                    try {
+                        const data = JSON.parse(line);
+                        if (data.s) setGenerationStatus(data.s);
+                        if (data.r) setGenerationReasoning(prev => prev + data.r);
+                        if (data.t) fullDraftHtml += data.t;
+                        if (data.m && data.m.research) {
+                            localStorage.setItem('juris_draft_research', JSON.stringify(data.m.research));
+                        }
+                        if (data.error) throw new Error(data.error);
+                    } catch (e) {
+                         // silently ignore
+                    }
+                }
+            }
+
+            const finalHtml = fullDraftHtml.replace('---END---', '');
+            localStorage.setItem('juris_generated_draft', finalHtml);
+            router.push('/draft/editor');
+
+        } catch (e: any) {
+            console.error("Failed to generate draft:", e);
+            alert("Draft generation failed.");
+            setIsGenerating(false);
+        }
     };
 
     return (
         <div className="flex h-dvh w-full bg-white font-sans text-slate-900 overflow-hidden relative">
+            {isGenerating && (
+                 <div className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center shadow-2xl transition-all animate-in fade-in">
+                     <div className="max-w-md w-full bg-white ring-1 ring-slate-100 shadow-[0_0_80px_-20px_rgba(0,0,0,0.1)] rounded-[2rem] p-8 md:p-10 flex flex-col items-center">
+                         <div className="h-16 w-16 bg-slate-900 shadow-xl rounded-2xl flex items-center justify-center mb-6">
+                             <Loader2 className="h-8 w-8 text-white animate-spin" />
+                         </div>
+                         <h3 className="text-2xl font-serif font-bold text-slate-900 mb-2">Juris is drafting</h3>
+                         <div className="bg-slate-50 px-4 py-2 rounded-full mb-6">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{generationStatus}</span>
+                         </div>
+                         <div ref={reasoningRef} className="w-full bg-transparent h-40 overflow-y-auto text-left text-[11px] leading-relaxed text-slate-400 font-mono scroll-smooth overflow-x-hidden pt-2 border-t border-slate-100">
+                             {generationReasoning || "Initializing reasoning engine..."}
+                         </div>
+                     </div>
+                 </div>
+            )}
             <AppSidebar />
             
             <main className="flex-1 w-full relative overflow-hidden flex flex-col h-dvh">
@@ -181,6 +270,8 @@ export default function DraftPage() {
                                 <textarea 
                                     className="w-full h-40 md:h-48 p-6 md:p-8 text-slate-800 bg-transparent focus:outline-none resize-none placeholder:text-slate-300 font-sans text-base md:text-lg leading-relaxed"
                                     placeholder={selectedDocId ? `Describe your ${selectedDocId}...` : "Describe your legal requirement..."}
+                                    value={draftInstructions}
+                                    onChange={(e) => setDraftInstructions(e.target.value)}
                                 />
                                 <div className="px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-t border-slate-50 bg-slate-50/[0.2] gap-4">
                                     <div className="flex items-center gap-2">

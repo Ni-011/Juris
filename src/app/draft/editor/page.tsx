@@ -6,6 +6,7 @@ import { EditorHeader } from "@/components/editor/EditorHeader"
 import { EditorLeftSidebar } from "@/components/editor/EditorLeftSidebar"
 import { EditorRightSidebar } from "@/components/editor/EditorRightSidebar"
 import { EditorMain } from "@/components/editor/EditorMain"
+import { LegalContextDialog, LegalContextData } from "@/components/legal/LegalContextDialog"
 
 import { cn } from "@/lib/utils"
 import { 
@@ -25,14 +26,58 @@ export default function EditorPage() {
     const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
     const [newFieldLabel, setNewFieldLabel] = React.useState("")
     const [error, setError] = React.useState("")
+    const [isDialogOpen, setIsDialogOpen] = React.useState(false)
+    const [activeReference, setActiveReference] = React.useState<LegalContextData | null>(null)
 
-    const [variables, setVariables] = React.useState([
-        { label: "Applicant Name", value: "Rajesh Kumar", key: "applicant" },
-        { label: "Father's Name", value: "", key: "father", placeholder: "[Father's Name Missing]" },
-        { label: "Address", value: "", key: "address", placeholder: "[Address Missing]" },
-        { label: "Respondent", value: "State of Haryana", key: "respondent" },
-        { label: "FIR Number", value: "402/2024", key: "fir" },
-    ])
+    const [variables, setVariables] = React.useState<any[]>([])
+
+    // Sync variables from document on mount or when a new draft is generated
+    React.useEffect(() => {
+        const generated = localStorage.getItem('juris_generated_draft');
+        const content = generated || localStorage.getItem('juris_draft_content');
+
+        if (content) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(content, 'text/html');
+            const spans = doc.querySelectorAll('span[data-variable-key]');
+            
+            const detectedVars: any[] = [];
+            const seenKeys = new Set();
+
+            spans.forEach(span => {
+                const key = span.getAttribute('data-variable-key');
+                if (key && !seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    const label = key
+                        .replace(/_/g, ' ')
+                        .replace(/\b\w/g, l => l.toUpperCase());
+                    
+                    detectedVars.push({
+                        label,
+                        key,
+                        value: span.textContent || "",
+                        placeholder: `Enter ${label}...`
+                    });
+                }
+            });
+
+            if (detectedVars.length > 0) {
+                setVariables(detectedVars);
+            } else if (variables.length === 0) {
+                // Fallback to defaults if no markup found and empty state
+                setVariables([
+                    { label: "Applicant Name", value: "Rajesh Kumar", key: "applicant" },
+                    { label: "Respondent", value: "State of Haryana", key: "respondent" },
+                    { label: "FIR Number", value: "402/2024", key: "fir" },
+                ]);
+            }
+
+            // Cleanup so we don't re-extract on every refresh if not needed
+            if (generated) {
+                localStorage.removeItem('juris_generated_draft');
+            }
+        }
+    }, [/* only run on mount */]);
 
     const handleAddField = () => {
         setIsAddModalOpen(true)
@@ -66,6 +111,49 @@ export default function EditorPage() {
         editor.commands.insertVariable({ key, label })
     }
 
+    const handleReferenceClick = (type: 'statute' | 'precedent', name: string) => {
+        const researchRaw = localStorage.getItem('juris_draft_research');
+        const research = researchRaw ? JSON.parse(researchRaw) : {};
+        let found: any = null;
+        
+        if (type === 'precedent') {
+            found = (research.precedents || []).find((p: any) => 
+                (p.caseName || p.title || "").toLowerCase().includes(name.toLowerCase()) ||
+                name.toLowerCase().includes((p.caseName || p.title || "").toLowerCase())
+            );
+        } else {
+            found = (research.statutes || []).find((s: any) => 
+                (s.retrievedContext?.title || "").toLowerCase().includes(name.toLowerCase()) ||
+                (s.retrievedContext?.text || "").toLowerCase().includes(name.toLowerCase()) ||
+                name.toLowerCase().includes((s.retrievedContext?.title || "").toLowerCase())
+            );
+        }
+
+        if (found) {
+            setActiveReference({
+                sourceType: type,
+                retrievedContext: type === 'precedent' ? {
+                    title: found.caseName || found.title,
+                    text: found.summary || found.snippet || "",
+                    citation: found.citation,
+                    court: found.court,
+                    year: found.year,
+                    pdfUrl: found.pdfUrl
+                } : found.retrievedContext
+            });
+        } else {
+            // Fallback for manually added or unrecognized items
+            setActiveReference({
+                sourceType: type,
+                retrievedContext: {
+                    title: name,
+                    text: `Official details for ${name}. Click below to see the full legal source.`,
+                }
+            });
+        }
+        setIsDialogOpen(true);
+    }
+
     return (
         <div className="flex h-screen w-full bg-white overflow-hidden relative font-sans">
             <AppSidebar />
@@ -78,7 +166,13 @@ export default function EditorPage() {
                 />
                 
                 <div id="editor-container" className="flex-1 flex overflow-hidden relative">
-                    {!isFocusMode && <EditorLeftSidebar editor={editor} />}
+                    {!isFocusMode && (
+                        <EditorLeftSidebar 
+                            editor={editor} 
+                            variables={variables} 
+                            onReferenceClick={handleReferenceClick}
+                        />
+                    )}
                     <EditorMain 
                         onEditorReady={setEditor} 
                         variables={variables}
@@ -147,6 +241,13 @@ export default function EditorPage() {
                     </form>
                 </DialogContent>
             </Dialog>
+
+            <LegalContextDialog 
+                isOpen={isDialogOpen}
+                onClose={() => setIsDialogOpen(false)}
+                data={activeReference}
+                isMobile={false}
+            />
         </div>
     )
 }

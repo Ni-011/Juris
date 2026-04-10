@@ -17,6 +17,7 @@ import {
     FileSignature
 } from "lucide-react";
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 import {
     Sidebar,
@@ -33,7 +34,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-    { title: "Assistant", icon: MessageSquare, active: true, href: "/" },
+    { title: "Assistant", icon: MessageSquare, href: "/" },
     { title: "Draft", icon: FileSignature, href: "/draft" },
     {
         title: "Vault",
@@ -51,6 +52,8 @@ const navItems = [
 ];
 
 export function AppSidebar() {
+    const pathname = usePathname();
+
     return (
         <Sidebar collapsible="icon" className="border-r border-slate-100 bg-white shadow-sm">
             <SidebarHeader className="px-4 py-4 space-y-4 group-data-[collapsible=icon]:px-2">
@@ -79,35 +82,41 @@ export function AppSidebar() {
 
             <SidebarContent className="px-2 mt-2">
                 <SidebarMenu className="gap-0.5">
-                    {navItems.map((item) => (
-                        <SidebarMenuItem key={item.title}>
-                            <Link href={item.href || "#"} className="w-full">
-                                <SidebarMenuButton
-                                    isActive={item.active}
-                                    className={`gap-3 py-2 px-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer w-full ${item.active
-                                        ? "bg-slate-100 text-slate-900 font-semibold"
-                                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                                        }`}
-                                >
-                                    <item.icon className={`h-4 w-4 ${item.active ? "text-slate-900" : "text-slate-500"}`} />
-                                    <span className="text-[13px]">{item.title}</span>
-                                </SidebarMenuButton>
-                            </Link>
+                    {navItems.map((item) => {
+                        const isActive = item.href === '/' 
+                            ? pathname === '/' 
+                            : pathname?.startsWith(item.href || '_null');
 
-                            {item.items && (
-                                <div className="ml-9 mt-1 space-y-1 overflow-hidden group-data-[collapsible=icon]:hidden">
-                                    {item.items.map((subItem) => (
-                                        <div
-                                            key={subItem}
-                                            className="text-[13px] text-slate-400 hover:text-slate-900 py-1 cursor-pointer transition-all hover:translate-x-1"
-                                        >
-                                            {subItem}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </SidebarMenuItem>
-                    ))}
+                        return (
+                            <SidebarMenuItem key={item.title}>
+                                <Link href={item.href || "#"} className="w-full">
+                                    <SidebarMenuButton
+                                        isActive={isActive}
+                                        className={`gap-3 py-2 px-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer w-full ${isActive
+                                            ? "bg-slate-100 text-slate-900 font-semibold"
+                                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                                            }`}
+                                    >
+                                        <item.icon className={`h-4 w-4 ${isActive ? "text-slate-900" : "text-slate-500"}`} />
+                                        <span className="text-[13px]">{item.title}</span>
+                                    </SidebarMenuButton>
+                                </Link>
+
+                                {item.items && (
+                                    <div className="ml-9 mt-1 space-y-1 overflow-hidden group-data-[collapsible=icon]:hidden">
+                                        {item.items.map((subItem) => (
+                                            <div
+                                                key={subItem}
+                                                className="text-[13px] text-slate-400 hover:text-slate-900 py-1 cursor-pointer transition-all hover:translate-x-1"
+                                            >
+                                                {subItem}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </SidebarMenuItem>
+                        );
+                    })}
                 </SidebarMenu>
             </SidebarContent>
 

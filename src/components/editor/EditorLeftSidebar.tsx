@@ -4,10 +4,19 @@ import * as React from "react"
 import { ChevronRight, FileText, Scale, ExternalLink, AlertCircle, Plus, BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export function EditorLeftSidebar({ editor }: { editor: any }) {
+export function EditorLeftSidebar({ 
+    editor, 
+    variables, 
+    onReferenceClick 
+}: { 
+    editor: any, 
+    variables: any[],
+    onReferenceClick: (type: 'statute' | 'precedent', name: string) => void
+}) {
     const [dynamicOutline, setDynamicOutline] = React.useState<{ title: string, level: number, pos: number }[]>([])
     const [dynamicCitations, setDynamicCitations] = React.useState<{ name: string, pos: number }[]>([])
     const [activeHeadingPos, setActiveHeadingPos] = React.useState<number | null>(null)
+    const [dynamicActs, setDynamicActs] = React.useState<{ name: string, section: string }[]>([])
 
     React.useEffect(() => {
         if (!editor) return
@@ -35,16 +44,39 @@ export function EditorLeftSidebar({ editor }: { editor: any }) {
 
             setDynamicOutline(headings)
             
-            // Deduplicate citations
+            // Deduplicate and filter citations (only show names that don't look like generic variables)
             const uniqueCitations: { name: string, pos: number }[] = []
             const seen = new Set()
             for (const c of citations) {
-                if (!seen.has(c.name)) {
-                    seen.add(c.name)
+                const text = c.name.trim()
+                if (!seen.has(text) && text.length > 3 && (text.includes(' v ') || text.includes(' vs ') || text.includes(' v. '))) {
+                    seen.add(text)
                     uniqueCitations.push(c)
                 }
             }
             setDynamicCitations(uniqueCitations)
+
+            // Extract Acts
+            const fullText = editor.getText()
+            const commonActs = [
+                { name: "Bharatiya Nagarik Suraksha Sanhita, 2023", pattern: /BNSS|Bharatiya Nagarik Suraksha Sanhita/gi, short: "BNSS" },
+                { name: "Indian Penal Code, 1860", pattern: /IPC|Indian Penal Code/gi, short: "IPC" },
+                { name: "Code of Criminal Procedure, 1973", pattern: /CrPC|Code of Criminal Procedure/gi, short: "CrPC" },
+                { name: "Constitution of India", pattern: /Constitution|Article\s+\d+|Art\.\s*\d+/gi, short: "Const." }
+            ]
+            
+            const detectedGroups = commonActs.map(act => {
+                const hasAct = act.pattern.test(fullText)
+                if (!hasAct) return null
+                
+                // Find sections near the act or globally
+                const sectionMatches = [...fullText.matchAll(/(?:Section|S\.)\s*(\d+[A-Z]*)/gi)].map(m => m[1])
+                const uniqueSections = Array.from(new Set(sectionMatches)).slice(0, 3).join(", ")
+                
+                return { name: act.name, section: uniqueSections || "Various" }
+            }).filter(Boolean) as { name: string, section: string }[]
+
+            setDynamicActs(detectedGroups)
             updateActiveHeading(headings)
         }
 
@@ -102,17 +134,22 @@ export function EditorLeftSidebar({ editor }: { editor: any }) {
         }, 10)
     }
 
-    const glossaryClauses = [
-        { name: "Jurisdiction & Venue", text: "The parties hereby agree that the courts at Gurugram, Haryana shall have exclusive jurisdiction to adjudicate any disputes arising out of or in connection with this application." },
-        { name: "BNSS Applicability", text: "The proceedings herein are governed by the provisions of the Bharatiya Nagarik Suraksha Sanhita, 2023, while keeping in view the procedural transition from the Code of Criminal Procedure, 1973." },
-        { name: "Standard Bail Ground", text: "The Applicant has deep roots in society and there is no flight risk or apprehension of tampering with evidence, as the entire case is based on documentary records already in possession of the investigating agency." }
-    ]
-
-    const actsList = [
-        { name: "The Bharatiya Nagarik Suraksha Sanhita, 2023", section: "S.480" },
-        { name: "The Indian Penal Code, 1860", section: "S.420, 467" },
-        { name: "Constitution of India", section: "Art. 21" },
-    ]
+    const integrityScore = React.useMemo(() => {
+        if (!variables || variables.length === 0) return 100;
+        const total = variables.length;
+        const filled = variables.filter(v => 
+            v.value && 
+            v.value.trim() !== "" && 
+            !v.value.includes("[") && 
+            !v.value.includes("]")
+        ).length;
+        
+        // Base score on filled variables (70%) + presence of outline (30%)
+        const varScore = (filled / total) * 70;
+        const outlineScore = dynamicOutline.length > 3 ? 30 : (dynamicOutline.length / 4) * 30;
+        
+        return Math.min(100, Math.round(varScore + outlineScore));
+    }, [variables, dynamicOutline]);
 
     return (
         <aside className="w-[280px] border-r border-slate-100 bg-white flex flex-col shrink-0 overflow-hidden hidden lg:flex">
@@ -158,19 +195,23 @@ export function EditorLeftSidebar({ editor }: { editor: any }) {
                 <div className="space-y-5">
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-1">Statutory References</h3>
                     <div className="space-y-4 px-1">
-                        {actsList.map((act, i) => (
-                            <div 
-                                key={i} 
-                                onClick={() => window.open(`https://indiankanoon.org/search/?formInput=${encodeURIComponent(act.name)}`, '_blank')}
-                                className="group cursor-pointer border-l-2 border-slate-100 pl-4 hover:border-slate-900 transition-all py-0.5"
-                            >
-                                <span className="text-[12px] font-semibold text-slate-600 block group-hover:text-slate-900 transition-colors leading-snug mb-1">{act.name}</span>
-                                <div className="flex items-center gap-2">
-                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Section {act.section}</span>
-                                     <ExternalLink className="h-2.5 w-2.5 text-slate-300 opacity-0 group-hover:opacity-100 transition-all" />
+                        {dynamicActs.length > 0 ? (
+                            dynamicActs.map((act, i) => (
+                                <div 
+                                    key={i} 
+                                    onClick={() => onReferenceClick('statute', act.name)}
+                                    className="group cursor-pointer border-l-2 border-slate-100 pl-4 hover:border-slate-900 transition-all py-0.5 animate-in fade-in duration-500"
+                                >
+                                    <span className="text-[12px] font-semibold text-slate-600 block group-hover:text-slate-900 transition-colors leading-snug mb-1">{act.name}</span>
+                                    <div className="flex items-center gap-2">
+                                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Section {act.section}</span>
+                                         <ExternalLink className="h-2.5 w-2.5 text-slate-300 opacity-0 group-hover:opacity-100 transition-all" />
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))
+                        ) : (
+                            <span className="text-[11px] text-slate-300 italic block px-2">Scanning for statutes...</span>
+                        )}
                     </div>
                 </div>
 
@@ -182,7 +223,7 @@ export function EditorLeftSidebar({ editor }: { editor: any }) {
                             dynamicCitations.map((cite, i) => (
                                 <div 
                                     key={i} 
-                                    onClick={() => handleScrollTo(cite.pos)}
+                                    onClick={() => onReferenceClick('precedent', cite.name)}
                                     className="group cursor-pointer border-l-2 border-slate-100 pl-4 hover:border-slate-900 transition-all py-0.5"
                                 >
                                     <span className="text-[12px] font-semibold text-slate-600 group-hover:text-slate-900 leading-normal block transition-colors font-serif italic">
@@ -201,7 +242,11 @@ export function EditorLeftSidebar({ editor }: { editor: any }) {
                 <div className="space-y-5">
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-1">Clause Library</h3>
                     <div className="space-y-1.5">
-                        {glossaryClauses.map((clause, i) => (
+                        {[
+                            { name: "Jurisdiction & Venue", text: "The parties hereby agree that the courts at Gurugram, Haryana shall have exclusive jurisdiction to adjudicate any disputes arising out of or in connection with this application." },
+                            { name: "BNSS Applicability", text: "The proceedings herein are governed by the provisions of the Bharatiya Nagarik Suraksha Sanhita, 2023, while keeping in view the procedural transition from the Code of Criminal Procedure, 1973." },
+                            { name: "Standard Bail Ground", text: "The Applicant has deep roots in society and there is no flight risk or apprehension of tampering with evidence, as the entire case is based on documentary records already in possession of the investigating agency." }
+                        ].map((clause, i) => (
                             <button 
                                 key={i} 
                                 onClick={() => editor.chain().focus().insertContent(`<p>${clause.text}</p>`).run()}
@@ -222,13 +267,16 @@ export function EditorLeftSidebar({ editor }: { editor: any }) {
 
             <div className="p-6 border-t border-slate-100 bg-white shadow-[0_-4px_12px_-8px_rgba(0,0,0,0.05)]">
                  <div className="flex items-center justify-between mb-2.5">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em]">Draft Integrity</span>
-                    <span className="text-[10px] font-bold text-slate-900 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">83%</span>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em]">Draft Integrity</span>
+                        <span className="text-[8px] text-slate-300 font-medium uppercase">{variables.filter(v => v.value && !v.value.includes('[')).length} / {variables.length} Fields Ready</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-900 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{integrityScore}%</span>
                  </div>
                  <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
                     <div 
                         className="bg-slate-900 h-full rounded-full transition-all duration-1000 ease-out" 
-                        style={{ width: '83%' }}
+                        style={{ width: `${integrityScore}%` }}
                     />
                  </div>
             </div>

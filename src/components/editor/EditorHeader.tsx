@@ -129,18 +129,24 @@ export function EditorHeader({ onToggleFocus, isFocusMode, editor }: EditorHeade
                             <ChevronDown className="h-3.5 w-3.5 opacity-50" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52 p-2 rounded-2xl border-slate-100 shadow-2xl">
-                        <DropdownMenuItem onClick={handleExportPDF} className="gap-3 px-3 py-2.5 cursor-pointer rounded-xl text-slate-600 focus:text-slate-950 focus:bg-slate-50">
-                            <div className="h-8 w-8 rounded-lg bg-slate-50 flex items-center justify-center">
+                    <DropdownMenuContent align="end" className="w-64 p-2 rounded-2xl border-slate-100 shadow-2xl bg-white/95 backdrop-blur-md">
+                        <DropdownMenuItem onClick={handleExportPDF} className="gap-3 px-3 py-3 cursor-pointer rounded-xl text-slate-600 focus:text-slate-950 focus:bg-slate-50 transition-all border border-transparent focus:border-slate-100 group">
+                            <div className="h-10 w-10 rounded-lg bg-slate-50 flex items-center justify-center group-focus:scale-110 transition-transform">
                                 <Download className="h-4 w-4 text-slate-900" />
                             </div>
-                            <span className="text-[13px] font-bold">Download PDF</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleExportWord} className="gap-3 px-3 py-2.5 cursor-pointer rounded-xl text-slate-600 focus:text-slate-950 focus:bg-slate-50">
-                            <div className="h-8 w-8 rounded-lg bg-sky-50 flex items-center justify-center">
-                                <FileText className="h-4 w-4 text-sky-600" />
+                            <div className="flex flex-col">
+                                <span className="text-[13px] font-bold">Download PDF</span>
+                                <span className="text-[10px] text-slate-400 font-medium">Best for formal filing</span>
                             </div>
-                            <span className="text-[13px] font-bold">Download Word</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleExportWord} className="gap-3 px-3 py-3 cursor-pointer rounded-xl text-slate-600 focus:text-slate-950 focus:bg-slate-50 transition-all border border-transparent focus:border-slate-100 group">
+                            <div className="h-10 w-10 rounded-lg bg-slate-50 flex items-center justify-center group-focus:scale-110 transition-transform">
+                                <FileText className="h-4 w-4 text-slate-900" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[13px] font-bold">Download Word</span>
+                                <span className="text-[10px] text-slate-400 font-medium">Best for further editing</span>
+                            </div>
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>

@@ -174,6 +174,7 @@ export function EditorMain({
     const [aiInput, setAiInput] = React.useState("")
     const [isTyping, setIsTyping] = React.useState(false)
     const [isFocused, setIsFocused] = React.useState(false)
+    const lastSelection = React.useRef({ from: 1, to: 1 })
 
     const toolbarGroups = [
         {
@@ -223,7 +224,6 @@ export function EditorMain({
             VariableNode,
             CharacterCount,
             BubbleMenuExtension,
-            Underline,
             TextAlign.configure({
                 types: ['heading', 'paragraph'],
             }),
@@ -254,12 +254,31 @@ export function EditorMain({
         },
         onUpdate: ({ editor }) => {
             localStorage.setItem('juris_draft_content', editor.getHTML())
+        },
+        onSelectionUpdate: ({ editor }) => {
+            if (editor.isFocused) {
+                lastSelection.current = {
+                    from: editor.state.selection.from,
+                    to: editor.state.selection.to
+                }
+            }
         }
     })
 
     React.useEffect(() => {
         if (editor) {
             onEditorReady(editor)
+            
+            const generated = localStorage.getItem('juris_generated_draft');
+            if (generated) {
+                editor.commands.setContent(generated);
+                localStorage.setItem('juris_draft_content', generated);
+            } else {
+                const existing = localStorage.getItem('juris_draft_content');
+                if (existing) {
+                    editor.commands.setContent(existing);
+                }
+            }
         }
     }, [editor, onEditorReady])
 
@@ -267,11 +286,26 @@ export function EditorMain({
         if (!editor || isTyping) return
         
         setIsTyping(true)
-        const selection = editor.state.doc.textBetween(
-            editor.state.selection.from,
-            editor.state.selection.to,
-            ' '
-        )
+
+        // Use the tracked selection coordinates for maximum precision
+        const { from, to } = lastSelection.current
+        const hasSelection = from !== to
+        
+        const selectionHtml = editor.state.doc.textBetween(from, to, ' ') // fallback
+        
+        // Get the actual HTML for precision using standard ProseMirror serializer
+        let selection = selectionHtml
+        try {
+            const { DOMSerializer } = await import('@tiptap/pm/model')
+            const fragment = editor.state.doc.content.cut(from, to)
+            const div = document.createElement('div')
+            const serializer = DOMSerializer.fromSchema(editor.schema)
+            serializer.serializeFragment(fragment, { document }, div)
+            selection = div.innerHTML
+        } catch (e) {
+            console.warn("Failed to serialize selection HTML, falling back to text", e)
+        }
+
         const fullDocument = editor.getHTML()
 
         try {
@@ -280,19 +314,25 @@ export function EditorMain({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt,
-                    selection: selectionOnly ? selection : (selection || "the selected section"),
+                    selection: selectionOnly ? selection : (hasSelection ? selection : ""),
                     fullDocument
                 })
             })
 
             const data = await response.json()
             if (data.result) {
-                if (selection) {
-                    editor.chain().focus().insertContent(data.result).run()
+                // Sanitize result: remove potential markdown code blocks if the AI included them
+                let cleaned = data.result.replace(/^```html\n?|```$/g, '').trim()
+                
+                if (hasSelection) {
+                    // Explicitly target the captured range
+                    editor.chain()
+                        .focus()
+                        .insertContentAt({ from, to }, cleaned)
+                        .run()
                 } else {
-                    // If no selection, just append or alert
-                    console.log("AI Result:", data.result)
-                    editor.chain().focus().insertContent(`<p>${data.result}</p>`).run()
+                    // Apply global document rewrite
+                    editor.commands.setContent(cleaned)
                 }
             }
         } catch (error) {
