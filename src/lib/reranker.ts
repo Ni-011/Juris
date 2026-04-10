@@ -31,7 +31,7 @@ const nvidia = new OpenAI({
   baseURL: "https://integrate.api.nvidia.com/v1",
 });
 
-const RERANK_MODEL = "nvidia/nv-rerankqa-mistral-4b-v3";
+const RERANK_MODEL = "nvidia/rerank-qa-mistral-4b";
 
 class NvidiaReranker implements RerankerProvider {
   name = "nvidia-nim";
@@ -56,7 +56,7 @@ class NvidiaReranker implements RerankerProvider {
         // NVIDIA NIM reranker uses the same OpenAI-compatible API
         // but through a special endpoint pattern
         const response = await fetch(
-          "https://ai.api.nvidia.com/v1/retrieval/nvidia/nv-rerankqa-mistral-4b-v3/reranking",
+          "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking",
           {
             method: "POST",
             headers: {

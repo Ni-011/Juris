@@ -2,6 +2,9 @@ import OpenAI from "openai";
 import { generateEmbedding } from "./embeddings";
 import { queryVectors } from "./pinecone";
 import { rerankChunks } from "./reranker";
+import { db } from "@/lib/db";
+import { documentChunks } from "@/drizzle/schema";
+import { inArray } from "drizzle-orm";
 
 // ─── Setup ──────────────────────────────────────────────────
 
@@ -64,19 +67,19 @@ Return ONLY a JSON object with this shape:
 }`;
 
   console.log(`[Query Pipeline] Stage 1: Parsing Intent...`);
-  const response = await nvidia.chat.completions.create({
-    model: INTENT_MODEL,
-    messages: [
-      {
-        role: "system",
-        content: "You are a query intent router. Output ONLY valid JSON.",
-      },
-      { role: "user", content: prompt },
-    ],
-    max_tokens: 1000,
-  } as any);
-
   try {
+    const response = await nvidia.chat.completions.create({
+      model: INTENT_MODEL,
+      messages: [
+        {
+          role: "system",
+          content: "You are a query intent router. Output ONLY valid JSON.",
+        },
+        { role: "user", content: prompt },
+      ],
+      max_tokens: 1000,
+    } as any);
+
     let content = (response.choices[0].message.content as string) || "";
     // Clean markdown
     if (content.includes("\`\`\`")) {
@@ -84,7 +87,7 @@ Return ONLY a JSON object with this shape:
       if (match) content = match[1];
     }
     const result = JSON.parse(content.trim()) as QueryIntent;
-    
+
     // Ensure top_k is reasonable
     result.top_k = Math.max(3, Math.min(result.top_k || 15, 50));
     console.log(`[Query Pipeline] Intent parsed:`, result);
@@ -106,10 +109,10 @@ Return ONLY a JSON object with this shape:
 export function buildFilters(vaultId: string, intent: QueryIntent) {
   const filters: Record<string, any> = { vault_id: { $eq: vaultId } };
 
-  if (intent.metadata_filters.file_names?.length) {
+  if (intent.metadata_filters?.file_names?.length) {
     filters.file_name = { $in: intent.metadata_filters.file_names };
   }
-  if (intent.metadata_filters.doc_types?.length) {
+  if (intent.metadata_filters?.doc_types?.length) {
     filters.doc_type = { $in: intent.metadata_filters.doc_types };
   }
 
@@ -125,16 +128,29 @@ export async function retrieveAndRerank(
   console.log(`[Query Pipeline] Stage 3: Vector Retrieval...`);
   // Over-fetch by 3x for reranker
   const fetchCount = intent.top_k * 3;
-  
+
   const embedding = await generateEmbedding(intent.search_query);
   const pineconeMatches = await queryVectors(embedding, fetchCount, filters);
 
   if (!pineconeMatches.length) return [];
 
+  // Fetch true text content from DB because pinecone metadata lacks text payload
+  const pineconeIds = pineconeMatches.map((m) => m.id);
+  const dbChunks = await db
+    .select({ pineconeId: documentChunks.pineconeId, content: documentChunks.content })
+    .from(documentChunks)
+    .where(inArray(documentChunks.pineconeId, pineconeIds));
+
+  // Create lookup map
+  const textMap = new Map<string, string>();
+  for (const row of dbChunks) {
+    if (row.pineconeId) textMap.set(row.pineconeId, row.content);
+  }
+
   // Map to format for reranker
   const docsToRerank = pineconeMatches.map((m) => ({
     id: m.id,
-    content: (m.metadata?.text as string) || (m.metadata?.chunk_text as string) || (m.metadata?.content as string) || "",
+    content: textMap.get(m.id) || (m.metadata?.text as string) || "",
     metadata: m.metadata || {},
   }));
 
@@ -160,7 +176,7 @@ export function balanceEvidence(
   intent: QueryIntent
 ): BalancedChunk[] {
   console.log(`[Query Pipeline] Stage 5: Balancing Evidence...`);
-  
+
   // 1. Group by doc_id
   const byDoc = chunks.reduce((acc, chunk) => {
     if (!acc[chunk.doc_id]) acc[chunk.doc_id] = [];
@@ -185,20 +201,20 @@ export function balanceEvidence(
   const MAX_CHUNKS_PER_DOC = intent.query_type === "summarize" ? 10 : 3;
 
   const selectedDocs = docScores.slice(0, MAX_DOCS);
-  
+
   const finalChunks: BalancedChunk[] = [];
-  
+
   for (const doc of selectedDocs) {
     // Sort chunks within doc by score
     doc.chunks.sort((a, b) => b.score - a.score);
-    
+
     // Simple diversity check (prefer different pages if possible)
     const pickedPages = new Set<number>();
     let acceptedForDoc = 0;
-    
+
     for (const chunk of doc.chunks) {
       if (acceptedForDoc >= MAX_CHUNKS_PER_DOC) break;
-      
+
       // Allow if page not picked yet, or if we strictly need more chunks
       if (!pickedPages.has(chunk.page_number) || acceptedForDoc < 2) {
         finalChunks.push(chunk);
@@ -210,7 +226,7 @@ export function balanceEvidence(
 
   // Sort final set by overall relevance score again
   finalChunks.sort((a, b) => b.score - a.score);
-  
+
   console.log(`[Query Pipeline] Balanced from ${chunks.length} → ${finalChunks.length} chunks across ${selectedDocs.length} docs`);
   return finalChunks;
 }
@@ -264,13 +280,13 @@ INSTRUCTIONS:
       const sendChunk = (data: any) => {
         if (streamClosed) return;
         try {
-          controller.enqueue(new TextEncoder().encode(JSON.stringify(data) + "\\n"));
-        } catch (e) {}
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(data) + "\n"));
+        } catch (e) { }
       };
       const closeStream = () => {
         if (streamClosed) return;
         streamClosed = true;
-        try { controller.close(); } catch (e) {}
+        try { controller.close(); } catch (e) { }
       };
 
       try {
@@ -292,21 +308,21 @@ INSTRUCTIONS:
         }
 
         // Send metadata payload at the end for the UI
-        sendChunk({ 
-          m: { 
+        sendChunk({
+          m: {
             citations: evidence.map((c, i) => ({
-              id: `${i+1}`,
+              id: `${i + 1}`,
               fileName: c.file_name,
               pageNumber: c.page_number,
               sectionHeading: c.section_heading
             }))
-          } 
+          }
         });
 
         closeStream();
       } catch (error: any) {
         console.error("[Query Pipeline] Compilation failed:", error);
-        sendChunk({ t: "\\n\\n⚠️ An error occurred while generating the response." });
+        sendChunk({ t: "\n\n⚠️ An error occurred while generating the response." });
         closeStream();
       }
     }

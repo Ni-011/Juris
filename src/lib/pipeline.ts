@@ -254,7 +254,7 @@ export async function processIngestionJob(jobId: string): Promise<void> {
 
   for (const doc of pendingDocs) {
     try {
-      await processDocument(doc.id);
+      await processDocumentFull(doc.id);
       processed++;
     } catch (error: any) {
       failed++;
@@ -487,6 +487,67 @@ JSON:`;
       })
       .where(eq(analysisJobs.id, analysisJobId));
 
+    // Also embed and store the overarching analysis as a vector chunk
+    try {
+      const docSummaryObj = analysisResult.doc_summary as Record<string, any>;
+      const keyEntitiesObj = analysisResult.key_entities as Record<string, any>;
+
+      const docSummaryStr = docSummaryObj ?
+        `Document Summary: ${docSummaryObj.summary}\nThemes: ${(docSummaryObj.key_themes || []).join(', ')}\nPurpose: ${docSummaryObj.document_purpose}` : "";
+
+      const keyEntitiesStr = keyEntitiesObj ?
+        `Key Entities: ${JSON.stringify(keyEntitiesObj)}` : "";
+
+      const analysisContent = `[GLOBAL DOCUMENT ANALYSIS]\n${docSummaryStr}\n\n${keyEntitiesStr}`;
+
+      if (docSummaryStr.trim() || keyEntitiesStr.trim()) {
+        const summaryEmbeddings = await generateEmbeddings([analysisContent]);
+
+        if (summaryEmbeddings[0] && summaryEmbeddings[0].embedding.length > 0) {
+          const chunkIndex = 9999;
+          const pineconeId = `${docId}_chunk_analysis`;
+
+          await upsertVectors([{
+            id: pineconeId,
+            values: summaryEmbeddings[0].embedding,
+            metadata: {
+              doc_id: docId,
+              vault_id: doc.vaultId,
+              tenant_id: doc.tenantId,
+              file_name: doc.fileName,
+              doc_type: doc.docType,
+              source: "analysis",
+              upload_time: doc.uploadTime.toISOString(),
+              page_number: 0,
+              section_heading: "Global Document Analysis",
+              chunk_index: chunkIndex,
+              chunk_type: "document_summary",
+              language: doc.language || "en",
+              token_count: Math.floor(analysisContent.length / 4),
+              checksum: doc.checksum,
+            }
+          }]);
+
+          await db.insert(documentChunks).values({
+            documentId: docId,
+            vaultId: doc.vaultId,
+            tenantId: doc.tenantId,
+            chunkIndex: chunkIndex,
+            content: analysisContent,
+            tokenCount: Math.floor(analysisContent.length / 4),
+            pageNumber: 0,
+            sectionHeading: "Global Document Analysis",
+            chunkType: "text",
+            pineconeId: pineconeId,
+            embeddingModel: EMBEDDING_MODEL,
+          });
+          console.log(`[Analysis] Doc ${docId}: Embedded analysis into Pinecone`);
+        }
+      }
+    } catch (embErr: any) {
+      console.error(`[Analysis] Doc ${docId}: Failed to embed analysis:`, embErr.message);
+    }
+
     // Update document status back to ready
     await db
       .update(documents)
@@ -512,13 +573,13 @@ JSON:`;
       .from(documents)
       .where(eq(documents.id, docId))
       .limit(1);
-    
+
     if (currentDoc?.status === "analyzing") {
       await db
         .update(documents)
         .set({ status: "ready", updatedAt: new Date() })
         .where(eq(documents.id, docId));
-    }
+    } 
   }
 }
 

@@ -38,102 +38,26 @@ def parse_html(file_path: str) -> dict:
 
     sections = []
     current_heading = None
-    current_parts = []
 
-    # Find the main content area
-    main_content = (
-        soup.find("main")
-        or soup.find("article")
-        or soup.find("body")
-        or soup
-    )
+    # Find the main content area (default to body or entire document)
+    main_content = soup.find("body") or soup
 
-    for element in main_content.children:
-        if not hasattr(element, "name") or element.name is None:
-            # NavigableString (raw text)
-            text = str(element).strip()
-            if text:
-                current_parts.append(text)
-            continue
+    # Convert all tables to markdown inline so they aren't lost
+    for table in main_content.find_all("table"):
+        md = _html_table_to_markdown(table)
+        if md:
+            table.replace_with(f"\n\n{md}\n\n")
+        else:
+            table.replace_with("")
 
-        # Heading tags
-        if element.name in ("h1", "h2", "h3", "h4", "h5", "h6"):
-            # Flush previous section
-            if current_parts:
-                sections.append({
-                    "content": "\n\n".join(current_parts),
-                    "page_number": None,
-                    "section_heading": current_heading,
-                    "chunk_type": "text",
-                    "metadata": {},
-                })
-                current_parts = []
-
-            current_heading = element.get_text(strip=True)
-
-        # Table tags
-        elif element.name == "table":
-            # Flush text before table
-            if current_parts:
-                sections.append({
-                    "content": "\n\n".join(current_parts),
-                    "page_number": None,
-                    "section_heading": current_heading,
-                    "chunk_type": "text",
-                    "metadata": {},
-                })
-                current_parts = []
-
-            table_md = _html_table_to_markdown(element)
-            if table_md:
-                sections.append({
-                    "content": table_md,
-                    "page_number": None,
-                    "section_heading": current_heading,
-                    "chunk_type": "table",
-                    "metadata": {"source": "html_table"},
-                })
-
-        # Section/article tags → recurse
-        elif element.name in ("section", "article", "div"):
-            text = element.get_text(separator="\n", strip=True)
-            if text:
-                # Check for headings inside
-                inner_heading = element.find(["h1", "h2", "h3", "h4", "h5", "h6"])
-                if inner_heading:
-                    # Flush current
-                    if current_parts:
-                        sections.append({
-                            "content": "\n\n".join(current_parts),
-                            "page_number": None,
-                            "section_heading": current_heading,
-                            "chunk_type": "text",
-                            "metadata": {},
-                        })
-                        current_parts = []
-                    current_heading = inner_heading.get_text(strip=True)
-
-                current_parts.append(text)
-
-        # Lists
-        elif element.name in ("ul", "ol"):
-            items = element.find_all("li")
-            list_text = "\n".join(f"• {li.get_text(strip=True)}" for li in items)
-            if list_text:
-                current_parts.append(list_text)
-
-        # Paragraphs and other block elements
-        elif element.name in ("p", "blockquote", "pre", "code"):
-            text = element.get_text(strip=True)
-            if text:
-                current_parts.append(text)
-
-    # Flush remaining
-    if current_parts:
+    # Extract all remaining text safely
+    text = main_content.get_text(separator="\n", strip=True)
+    
+    if text:
         sections.append({
-            "content": "\n\n".join(current_parts),
+            "content": text,
             "page_number": None,
-            "section_heading": current_heading,
+            "section_heading": None,
             "chunk_type": "text",
             "metadata": {},
         })

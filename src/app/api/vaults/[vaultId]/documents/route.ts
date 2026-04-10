@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { documents, vaults, ingestionJobs } from "@/drizzle/schema";
 import { eq } from "drizzle-orm";
 import { generateReadUrl } from "@/lib/supabase-storage";
-import { processDocumentFull } from "@/lib/pipeline";
+import { processIngestionJob } from "@/lib/pipeline";
 import { createHash } from "crypto";
 
 interface RouteParams {
@@ -150,14 +150,6 @@ export async function POST(req: Request, { params }: RouteParams) {
           fileName: doc.fileName,
           status: "pending",
         });
-
-        // Fire-and-forget: process document asynchronously
-        processDocumentFull(doc.id).catch((err) => {
-          console.error(
-            `[Upload] Background processing failed for ${doc.id}:`,
-            err.message
-          );
-        });
       } catch (fileError: any) {
         errors.push({ fileName: file.fileName, error: fileError.message });
       }
@@ -174,6 +166,16 @@ export async function POST(req: Request, { params }: RouteParams) {
         errorLog: errors.length > 0 ? errors.map((e) => ({ docId: "", error: `${e.fileName}: ${e.error}` })) : undefined,
       })
       .where(eq(ingestionJobs.id, job.id));
+
+    // Fire-and-forget: process the entire ingestion job asynchronously
+    if (createdDocs.some(d => d.status === "pending")) {
+      processIngestionJob(job.id).catch((err) => {
+        console.error(
+          `[Upload] Background ingestion job failed for ${job.id}:`,
+          err.message
+        );
+      });
+    }
 
     return NextResponse.json(
       {
