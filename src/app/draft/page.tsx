@@ -1,16 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { 
-    Mail, 
-    Shield, 
-    FileText, 
-    Scale, 
-    FileCheck, 
-    File, 
-    Clock, 
-    ArrowUpCircle, 
-    AlertTriangle, 
+import {
+    Mail,
+    Shield,
+    FileText,
+    Scale,
+    FileCheck,
+    File,
+    Clock,
+    ArrowUpCircle,
+    AlertTriangle,
     Reply,
     Plus,
     Mic,
@@ -20,24 +20,49 @@ import {
     LayoutGrid,
     Sparkles,
     FileSignature,
-    Loader2
+    Loader2,
+    SendHorizontal,
+    ShieldCheck,
+    ScrollText,
+    Fingerprint,
+    PenTool,
+    Timer,
+    ArrowUpRight,
+    ShieldAlert,
+    MessageSquareReply,
+    Handshake,
+    Lock,
+    Home,
+    Briefcase,
+    Users,
+    StickyNote
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
 
-const docTypes = [
-    { id: 'legal-notice', title: "Legal Notice", icon: Mail },
-    { id: 'bail-app', title: "Bail Application", icon: Shield },
-    { id: 'plaint', title: "Plaint (Civil Suit)", icon: FileText },
+const LITIGATION_TYPES = [
+    { id: 'legal-notice', title: "Legal Notice", icon: SendHorizontal },
+    { id: 'bail-app', title: "Bail Application", icon: ShieldCheck },
+    { id: 'plaint', title: "Plaint (Civil Suit)", icon: ScrollText },
     { id: 'writ', title: "Writ Petition", icon: Scale },
-    { id: 'affidavit', title: "Affidavit", icon: FileCheck, active: true },
-    { id: 'written-stmt', title: "Written Statement", icon: File },
-    { id: 'interim-app', title: "Interim Application", icon: Clock },
-    { id: 'appeal-memo', title: "Appeal Memo", icon: ArrowUpCircle },
-    { id: 'criminal-complaint', title: "Criminal Complaint", icon: AlertTriangle },
-    { id: 'reply-notice', title: "Reply to Legal Notice", icon: Reply },
+    { id: 'affidavit', title: "Affidavit", icon: Fingerprint },
+    { id: 'written-stmt', title: "Written Statement", icon: PenTool },
+    { id: 'interim-app', title: "Interim Application", icon: Timer },
+    { id: 'appeal-memo', title: "Appeal Memo", icon: ArrowUpRight },
+    { id: 'criminal-complaint', title: "Criminal Complaint", icon: ShieldAlert },
+    { id: 'reply-notice', title: "Reply to Legal Notice", icon: MessageSquareReply },
+]
+
+const CONTRACT_TYPES = [
+    { id: 'service-agreement', title: "Service Agreement", icon: Handshake },
+    { id: 'nda', title: "Non-Disclosure", icon: Lock },
+    { id: 'lease-deed', title: "Lease Deed", icon: Home },
+    { id: 'employment-contract', title: "Employment", icon: Briefcase },
+    { id: 'partnership-deed', title: "Partnership", icon: Users },
+    { id: 'power-of-attorney', title: "Power of Attorney", icon: FileSignature },
+    { id: 'mou', title: "Memorandum (MoU)", icon: StickyNote },
 ]
 
 const templates = [
@@ -76,21 +101,29 @@ export default function DraftPage() {
         }
     }, [generationReasoning]);
 
+    React.useEffect(() => {
+        const firstDoc = activeCategory === 'litigation' ? LITIGATION_TYPES[0] : CONTRACT_TYPES[0];
+        if (firstDoc) setSelectedDocId(firstDoc.id);
+    }, [activeCategory]);
+
+    const currentDocTypes = activeCategory === 'litigation' ? LITIGATION_TYPES : CONTRACT_TYPES;
+
     const handleGenerate = async () => {
         if (!draftInstructions.trim() && !selectedDocId) return;
-        
+
         setIsGenerating(true);
         setGenerationStatus("Starting pipeline...");
         setGenerationReasoning("");
-        
+
         try {
-            const finalInstruction = draftInstructions.trim() || `Draft a standard ${docTypes.find(d => d.id === selectedDocId)?.title || selectedDocId} using common boilerplate.`;
-            
+            const selectedDoc = currentDocTypes.find(d => d.id === selectedDocId);
+            const finalInstruction = draftInstructions.trim() || `Draft a standard ${selectedDoc?.title || selectedDocId} using common boilerplate.`;
+
             const res = await fetch('/api/draft/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    docType: docTypes.find(d => d.id === selectedDocId)?.title || selectedDocId,
+                    docType: selectedDoc?.title || selectedDocId,
                     instructions: finalInstruction
                 })
             });
@@ -105,7 +138,7 @@ export default function DraftPage() {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                
+
                 buffer += decoder.decode(value, { stream: true });
                 let boundary = buffer.indexOf('\n');
 
@@ -125,7 +158,7 @@ export default function DraftPage() {
                         }
                         if (data.error) throw new Error(data.error);
                     } catch (e) {
-                         // silently ignore
+                        // silently ignore
                     }
                 }
             }
@@ -144,23 +177,23 @@ export default function DraftPage() {
     return (
         <div className="flex h-dvh w-full bg-white font-sans text-slate-900 overflow-hidden relative">
             {isGenerating && (
-                 <div className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center shadow-2xl transition-all animate-in fade-in">
-                     <div className="max-w-md w-full bg-white ring-1 ring-slate-100 shadow-[0_0_80px_-20px_rgba(0,0,0,0.1)] rounded-[2rem] p-8 md:p-10 flex flex-col items-center">
-                         <div className="h-16 w-16 bg-slate-900 shadow-xl rounded-2xl flex items-center justify-center mb-6">
-                             <Loader2 className="h-8 w-8 text-white animate-spin" />
-                         </div>
-                         <h3 className="text-2xl font-serif font-bold text-slate-900 mb-2">Juris is drafting</h3>
-                         <div className="bg-slate-50 px-4 py-2 rounded-full mb-6">
+                <div className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center shadow-2xl transition-all animate-in fade-in">
+                    <div className="max-w-md w-full bg-white ring-1 ring-slate-100 shadow-[0_0_80px_-20px_rgba(0,0,0,0.1)] rounded-[2rem] p-8 md:p-10 flex flex-col items-center">
+                        <div className="h-16 w-16 bg-slate-900 shadow-xl rounded-2xl flex items-center justify-center mb-6">
+                            <Loader2 className="h-8 w-8 text-white animate-spin" />
+                        </div>
+                        <h3 className="text-2xl font-serif font-bold text-slate-900 mb-2">Juris is drafting</h3>
+                        <div className="bg-slate-50 px-4 py-2 rounded-full mb-6">
                             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{generationStatus}</span>
-                         </div>
-                         <div ref={reasoningRef} className="w-full bg-transparent h-40 overflow-y-auto text-left text-[11px] leading-relaxed text-slate-400 font-mono scroll-smooth overflow-x-hidden pt-2 border-t border-slate-100">
-                             {generationReasoning || "Initializing reasoning engine..."}
-                         </div>
-                     </div>
-                 </div>
+                        </div>
+                        <div ref={reasoningRef} className="w-full bg-transparent h-40 overflow-y-auto text-left text-[11px] leading-relaxed text-slate-400 font-mono scroll-smooth overflow-x-hidden pt-2 border-t border-slate-100">
+                            {generationReasoning || "Initializing reasoning engine..."}
+                        </div>
+                    </div>
+                </div>
             )}
             <AppSidebar />
-            
+
             <main className="flex-1 w-full relative overflow-hidden flex flex-col h-dvh">
                 {/* Top Header */}
                 <div className="h-14 border-b border-slate-100 flex items-center justify-between px-4 sm:px-6 shrink-0 bg-white/80 backdrop-blur-md z-30">
@@ -174,7 +207,7 @@ export default function DraftPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                         <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[11px] font-bold text-white font-serif shadow-sm">J</div>
+                        <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[11px] font-bold text-white font-serif shadow-sm">J</div>
                     </div>
                 </div>
 
@@ -184,7 +217,7 @@ export default function DraftPage() {
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 md:mb-14 gap-6">
                             <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-3">
-                                     <div className="h-6 w-6 bg-slate-900 rounded-md flex items-center justify-center text-white font-serif font-bold text-[10px] uppercase tracking-tighter shrink-0">
+                                    <div className="h-6 w-6 bg-slate-900 rounded-md flex items-center justify-center text-white font-serif font-bold text-[10px] uppercase tracking-tighter shrink-0">
                                         J
                                     </div>
                                     <span className="text-[10px] md:text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Drafting Assistant</span>
@@ -210,7 +243,7 @@ export default function DraftPage() {
                                     <div className="h-px bg-slate-50 flex-1" />
                                 </div>
                                 <div className="flex p-1 bg-slate-50 rounded-xl border border-slate-200/50 w-full md:w-fit">
-                                    <button 
+                                    <button
                                         onClick={() => setActiveCategory('contracts')}
                                         className={cn(
                                             "flex-1 md:px-8 py-2.5 rounded-lg text-[12px] md:text-[13px] font-semibold transition-all uppercase tracking-wider",
@@ -219,7 +252,7 @@ export default function DraftPage() {
                                     >
                                         Contracts
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={() => setActiveCategory('litigation')}
                                         className={cn(
                                             "flex-1 md:px-8 py-2.5 rounded-lg text-[12px] md:text-[13px] font-semibold transition-all uppercase tracking-wider",
@@ -234,40 +267,51 @@ export default function DraftPage() {
 
                         {/* Doc Type Grid */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 mb-12 md:mb-16">
-                            {docTypes.map((doc) => (
-                                <Card 
+                            {currentDocTypes.map((doc) => (
+                                <motion.div
                                     key={doc.id}
-                                    onClick={() => setSelectedDocId(doc.id)}
-                                    className={cn(
-                                        "flex flex-col items-center justify-center p-4 cursor-pointer transition-all duration-200 h-28 md:h-32 border-slate-100 bg-white hover:bg-slate-50/50 relative text-center",
-                                        selectedDocId === doc.id ? "bg-slate-50 border-slate-900 ring-1 ring-slate-900" : ""
-                                    )}
+                                    whileHover={{ y: -4 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    className="h-full"
                                 >
-                                    <div className={cn(
-                                        "mb-3 transition-colors",
-                                        selectedDocId === doc.id ? "text-slate-900" : "text-slate-400"
-                                    )}>
-                                        <doc.icon className="h-6 w-6" />
-                                    </div>
-                                    <span className={cn(
-                                        "text-[12px] md:text-[13px] font-semibold tracking-tight",
-                                        selectedDocId === doc.id ? "text-slate-900" : "text-slate-500"
-                                    )}>
-                                        {doc.title}
-                                    </span>
-                                </Card>
+                                    <button
+                                        onClick={() => setSelectedDocId(doc.id)}
+                                        className={cn(
+                                            "w-full flex flex-col items-center justify-center p-4 cursor-pointer transition-all duration-300 h-32 md:h-36 border text-center rounded-2xl relative group overflow-hidden",
+                                            selectedDocId === doc.id 
+                                                ? "bg-slate-900 border-slate-900 text-white shadow-professional z-10 scale-[1.02]" 
+                                                : "bg-slate-50/50 border-slate-100 hover:border-slate-200 hover:bg-white"
+                                        )}
+                                    >
+                                        <div className={cn(
+                                            "h-10 w-10 md:h-11 md:w-11 rounded-xl flex items-center justify-center mb-3 transition-all duration-300",
+                                            selectedDocId === doc.id ? "bg-white/10 text-white" : "bg-white text-slate-400 border border-slate-50 shadow-sm"
+                                        )}>
+                                            <doc.icon className="h-5 w-5 md:h-5.5 md:w-5.5 stroke-[1.5px]" />
+                                        </div>
+                                        <span className={cn(
+                                            "text-[12px] md:text-[13px] font-bold tracking-tight px-1 transition-colors duration-300",
+                                            selectedDocId === doc.id ? "text-white" : "text-slate-900"
+                                        )}>
+                                            {doc.title}
+                                        </span>
+                                        {selectedDocId === doc.id && (
+                                            <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_white]" />
+                                        )}
+                                    </button>
+                                </motion.div>
                             ))}
                         </div>
 
                         {/* Custom Draft Form (Matches Chat Input Style) */}
                         <div className="space-y-4 md:space-y-6 max-w-4xl mx-auto">
                             <div className="flex items-center gap-2 text-[10px] md:text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1">
-                               <FileSignature className="h-4 w-4 text-slate-300" />
-                               <span>Draft Specification</span>
+                                <FileSignature className="h-4 w-4 text-slate-300" />
+                                <span>Draft Specification</span>
                             </div>
 
                             <Card className="p-0 border-slate-100 overflow-hidden shadow-sm rounded-2xl border bg-white focus-within:border-slate-300 transition-all duration-300">
-                                <textarea 
+                                <textarea
                                     className="w-full h-40 md:h-48 p-6 md:p-8 text-slate-800 bg-transparent focus:outline-none resize-none placeholder:text-slate-300 font-sans text-base md:text-lg leading-relaxed"
                                     placeholder={selectedDocId ? `Describe your ${selectedDocId}...` : "Describe your legal requirement..."}
                                     value={draftInstructions}
@@ -288,8 +332,8 @@ export default function DraftPage() {
                                             <ChevronDown className="h-3 w-3" />
                                         </Button>
                                     </div>
-                                    
-                                    <Button 
+
+                                    <Button
                                         onClick={handleGenerate}
                                         className="bg-slate-900 hover:bg-black text-white font-semibold rounded-xl h-10 px-8 text-[13px] shadow-sm transition-all active:scale-95 w-full sm:w-auto"
                                     >
@@ -304,33 +348,33 @@ export default function DraftPage() {
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-10 gap-4 border-b border-slate-100 pb-6">
                                 <div className="space-y-1">
                                     <h3 className="text-xs md:text-sm font-bold text-slate-900 uppercase tracking-[0.2em] flex items-center gap-2">
-                                        Curated Templates 
+                                        Curated Templates
                                     </h3>
                                     <p className="text-xs text-slate-400 font-medium">Select a structure to pre-fill the generator</p>
                                 </div>
                                 <span className="bg-slate-50 px-3 py-1 rounded-full text-[10px] font-bold text-slate-400 uppercase tracking-widest border border-slate-100">8+ Templates available</span>
                             </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {templates.map((template, i) => (
-                                        <motion.div
-                                            key={i}
-                                            whileHover={{ y: -8 }}
-                                            className="cursor-pointer h-full"
-                                            onClick={handleGenerate}
-                                        >
-                                            <Card className="p-7 md:p-8 border-slate-200/60 bg-white hover:border-slate-900 hover:shadow-professional transition-all h-full flex flex-col group rounded-3xl relative overflow-hidden">
-                                                <div className="absolute top-0 left-0 w-1 h-full bg-slate-900 opacity-0 group-hover:opacity-100 transition-all" />
-                                                <h4 className="text-[16px] md:text-[17px] font-bold text-slate-900 mb-4 group-hover:text-slate-900 transition-colors tracking-tight leading-snug">{template.title}</h4>
-                                                <p className="text-[13px] text-slate-500 leading-relaxed font-sans line-clamp-4 mb-6">
-                                                    {template.description}
-                                                </p>
-                                                <div className="mt-auto pt-4 flex items-center text-[11px] font-bold text-slate-400 group-hover:text-slate-900 transition-colors uppercase tracking-[0.15em]">
-                                                    Use Structure →
-                                                </div>
-                                            </Card>
-                                        </motion.div>
-                                    ))}
-                                </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {templates.map((template, i) => (
+                                    <motion.div
+                                        key={i}
+                                        whileHover={{ y: -8 }}
+                                        className="cursor-pointer h-full"
+                                        onClick={handleGenerate}
+                                    >
+                                        <Card className="p-7 md:p-8 border-slate-200/60 bg-white hover:border-slate-900 hover:shadow-professional transition-all h-full flex flex-col group rounded-3xl relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 w-1 h-full bg-slate-900 opacity-0 group-hover:opacity-100 transition-all" />
+                                            <h4 className="text-[16px] md:text-[17px] font-bold text-slate-900 mb-4 group-hover:text-slate-900 transition-colors tracking-tight leading-snug">{template.title}</h4>
+                                            <p className="text-[13px] text-slate-500 leading-relaxed font-sans line-clamp-4 mb-6">
+                                                {template.description}
+                                            </p>
+                                            <div className="mt-auto pt-4 flex items-center text-[11px] font-bold text-slate-400 group-hover:text-slate-900 transition-colors uppercase tracking-[0.15em]">
+                                                Use Structure →
+                                            </div>
+                                        </Card>
+                                    </motion.div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
