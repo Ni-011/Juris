@@ -279,24 +279,24 @@ export default function DraftPage() {
                                         className={cn(
                                             "w-full flex flex-col items-center justify-center p-4 cursor-pointer transition-all duration-300 h-32 md:h-36 border text-center rounded-2xl relative group overflow-hidden",
                                             selectedDocId === doc.id 
-                                                ? "bg-slate-900 border-slate-900 text-white shadow-professional z-10 scale-[1.02]" 
-                                                : "bg-slate-50/50 border-slate-100 hover:border-slate-200 hover:bg-white"
+                                                ? "bg-white border-slate-900 ring-2 ring-slate-900/5 text-slate-900 shadow-xl z-10 scale-[1.05]" 
+                                                : "bg-slate-50/50 border-slate-100 hover:border-slate-200 hover:bg-white text-slate-600"
                                         )}
                                     >
                                         <div className={cn(
                                             "h-10 w-10 md:h-11 md:w-11 rounded-xl flex items-center justify-center mb-3 transition-all duration-300",
-                                            selectedDocId === doc.id ? "bg-white/10 text-white" : "bg-white text-slate-400 border border-slate-50 shadow-sm"
+                                            selectedDocId === doc.id ? "bg-slate-900 text-white shadow-lg shadow-slate-200" : "bg-white text-slate-400 border border-slate-50 shadow-sm"
                                         )}>
                                             <doc.icon className="h-5 w-5 md:h-5.5 md:w-5.5 stroke-[1.5px]" />
                                         </div>
                                         <span className={cn(
                                             "text-[12px] md:text-[13px] font-bold tracking-tight px-1 transition-colors duration-300",
-                                            selectedDocId === doc.id ? "text-white" : "text-slate-900"
+                                            selectedDocId === doc.id ? "text-slate-900" : "text-slate-500 group-hover:text-slate-900"
                                         )}>
                                             {doc.title}
                                         </span>
                                         {selectedDocId === doc.id && (
-                                            <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_white]" />
+                                            <div className="absolute top-3 right-3 h-2 w-2 rounded-full bg-slate-900 shadow-[0_0_10px_rgba(0,0,0,0.1)]" />
                                         )}
                                     </button>
                                 </motion.div>
