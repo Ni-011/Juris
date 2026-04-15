@@ -51,7 +51,7 @@ export async function searchCases(query: string, limit: number = 10): Promise<Va
                 page: 1,
             }),
             cache: 'no-store' as RequestCache,
-            signal: AbortSignal.timeout(20000),
+            signal: AbortSignal.timeout(35000),
         });
 
         if (!response.ok) {
@@ -108,7 +108,11 @@ export async function searchCases(query: string, limit: number = 10): Promise<Va
         return [];
 
     } catch (error: any) {
-        console.error(`[Vaquill Search] Error:`, error.message);
+        if (error.name === 'TimeoutError' || error.message?.includes('aborted')) {
+            console.error(`[Vaquill Search] Error: Request timed out after 35s. The API might be under heavy load.`);
+        } else {
+            console.error(`[Vaquill Search] Error:`, error.message);
+        }
         return [];
     }
 }

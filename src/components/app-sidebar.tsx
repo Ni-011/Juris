@@ -54,15 +54,16 @@ export function AppSidebar() {
     if (path === "/") return pathname === "/";
     return pathname.startsWith(path);
   };
-
+  
   const navItems = [
     { title: "Assistant", icon: MessageSquare, href: "/" },
+    { title: "Draft", icon: FileSignature, href: "/draft" },
     { title: "Vault", icon: Folder, href: "/vault" },
-    { title: "Workflows", icon: Workflow, href: "#" },
-    { title: "History", icon: History, href: "#" },
-    { title: "Library", icon: Library, href: "#" },
-    { title: "Guidance", icon: BookOpen, href: "#" },
-  ];
+    { title: "Workflows", icon: Workflow },
+    { title: "History", icon: History },
+    { title: "Library", icon: Library },
+    { title: "Guidance", icon: BookOpen },
+];
 
   return (
     <Sidebar
@@ -188,7 +189,6 @@ export function AppSidebar() {
           })}
         </SidebarMenu>
       </SidebarContent>
-
       <SidebarFooter className="p-4 mt-auto">
         <div className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all rounded-lg cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
           <HelpCircle className="h-4 w-4 text-slate-500" />

@@ -20,8 +20,8 @@
   --card-foreground: #0f172a;
   --popover: #ffffff;
   --popover-foreground: #0f172a;
-  --primary: #5c7cfa;
-  /* More structured, professional blue */
+  --primary: #0f172a;
+  /* Premium Navy/Slate Primary */
   --primary-foreground: #ffffff;
   --secondary: #f1f5f9;
   --secondary-foreground: #475569;
@@ -38,12 +38,12 @@
 
   --sidebar: #ffffff;
   --sidebar-foreground: #475569;
-  --sidebar-primary: #5c7cfa;
+  --sidebar-primary: #0f172a;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f1f5f9;
   --sidebar-accent-foreground: #0f172a;
   --sidebar-border: #f1f5f9;
-  --sidebar-ring: #5c7cfa;
+  --sidebar-ring: #0f172a;
 }
 
 @theme {
@@ -239,4 +239,138 @@
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+/* Premium Layout & Utilities */
+.canvas-paper {
+  background-color: #ffffff;
+  box-shadow: 
+    0 0 0 1px rgba(15, 23, 42, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 8px rgba(0, 0, 0, 0.04),
+    0 12px 32px rgba(0, 0, 0, 0.06);
+  border-radius: 2px;
+  position: relative;
+}
+
+/* Tiptap ProseMirror — the actual editable element inside the paper */
+.canvas-paper .tiptap,
+.canvas-paper .ProseMirror {
+  max-width: 100%;
+  width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+  outline: none;
+  min-height: 100%;
+}
+
+.canvas-paper .tiptap p,
+.canvas-paper .ProseMirror p {
+  margin-bottom: 0.75em;
+  line-height: 1.85;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.canvas-paper .tiptap h1,
+.canvas-paper .ProseMirror h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
+  line-height: 1.3;
+  scroll-margin-top: 100px;
+}
+
+.canvas-paper .tiptap h2,
+.canvas-paper .ProseMirror h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.6em;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  scroll-margin-top: 100px;
+}
+
+.canvas-paper .tiptap h3,
+.canvas-paper .ProseMirror h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  scroll-margin-top: 100px;
+}
+
+.canvas-paper .tiptap blockquote,
+.canvas-paper .ProseMirror blockquote {
+  border-left: 3px solid #e2e8f0;
+  padding-left: 1rem;
+  color: #64748b;
+  font-style: italic;
+  margin: 1em 0;
+}
+
+.canvas-paper .tiptap ul,
+.canvas-paper .ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1em;
+}
+
+.canvas-paper .tiptap ol,
+.canvas-paper .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1em;
+}
+
+.canvas-paper .tiptap li,
+.canvas-paper .ProseMirror li {
+  margin-bottom: 0.35em;
+}
+
+.canvas-paper .tiptap hr,
+.canvas-paper .ProseMirror hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 2em 0;
+}
+
+.prose-premium {
+  font-family: var(--font-serif);
+  line-height: 1.8;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+
+/* Clickable Citation Styles */
+.citation-link {
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.citation-link:hover {
+  background-color: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
 }

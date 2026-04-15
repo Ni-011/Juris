@@ -49,7 +49,7 @@ async function main() {
         fs.writeFileSync(outPath, JSON.stringify({ fileSearchStoreName: store.name }, null, 2));
 
         console.log(`Done! Store name saved to ${outPath}`);
-    } catch (error) {
+    } catch (error: any) {
         console.error('Failed to create store and upload docs:', error);
     }
 }
