@@ -2,6 +2,9 @@ import OpenAI from 'openai';
 import { searchCases } from '@/lib/vaquill';
 import { Pinecone } from '@pinecone-database/pinecone';
 
+// Allow up to 5 minutes for the multi-stage drafting pipeline
+export const maxDuration = 300;
+
 // Initialize NVIDIA client
 const nvidia = new OpenAI({
     apiKey: (process.env.NVIDIA || process.env.NVIDEA) as string,

@@ -169,8 +169,12 @@ export default function DraftPage() {
 
         } catch (e: any) {
             console.error("Failed to generate draft:", e);
-            alert("Draft generation failed.");
+            const isTimeout = e.message?.includes('timeout') || e.message?.includes('Failed to fetch') || e.message?.includes('network');
+            alert(isTimeout 
+                ? "Draft generation timed out due to server load. Please try again in a moment."
+                : "Draft generation failed. Please try again.");
             setIsGenerating(false);
+            setGenerationStatus("Failed");
         }
     };
 

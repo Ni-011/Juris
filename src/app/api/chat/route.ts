@@ -4,6 +4,9 @@ import { searchCases } from '@/lib/vaquill';
 import { Pinecone } from '@pinecone-database/pinecone';
 import { parsePDF } from '@/lib/pdf-parser';
 
+// Allow up to 5 minutes for the multi-stage research pipeline
+export const maxDuration = 300;
+
 // Initialize NVIDIA client
 const nvidia = new OpenAI({
     apiKey: (process.env.NVIDIA || process.env.NVIDEA) as string,
@@ -286,7 +289,14 @@ export async function POST(req: Request) {
                         closeStream();
                     } catch (error: any) {
                         console.error('[Chat API] Follow-up Chat failed:', error.message);
-                        sendChunk({ t: "\n\n⚠️ Juris is experiencing an issue processing the follow-up request." });
+                        const isTimeout = error.message?.includes('timeout') || error.message?.includes('aborted') || error.code === 'ETIMEDOUT';
+                        const isRateLimit = error.status === 429;
+                        const errorMsg = isTimeout
+                            ? "\n\n⚠️ The request timed out. The AI model is under heavy load — please try again in a moment."
+                            : isRateLimit
+                                ? "\n\n⚠️ Rate limit reached. Please wait a moment before trying again."
+                                : "\n\n⚠️ Juris encountered an issue processing the follow-up request. Please try again.";
+                        sendChunk({ t: errorMsg });
                         closeStream();
                     }
                 }
@@ -531,8 +541,15 @@ export async function POST(req: Request) {
                     closeStream();
 
                 } catch (error: any) {
-                    console.error('[Chat API] Pipeline failed:', error.message);
-                    sendChunk({ t: "⚠️ Juris is experiencing an issue. Please try again." });
+                    console.error('[Chat API] Pipeline failed:', error.message, error.stack);
+                    const isTimeout = error.message?.includes('timeout') || error.message?.includes('aborted') || error.code === 'ETIMEDOUT';
+                    const isRateLimit = error.status === 429;
+                    const errorMsg = isTimeout
+                        ? "⚠️ The research pipeline timed out. The AI model may be under heavy load — please try again in a moment."
+                        : isRateLimit
+                            ? "⚠️ Rate limit reached. Please wait a minute before submitting a new query."
+                            : "⚠️ Juris encountered an issue during research. Please try again.";
+                    sendChunk({ t: errorMsg });
                     closeStream();
                 }
             },

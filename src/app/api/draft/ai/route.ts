@@ -1,6 +1,9 @@
 import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
 
+// Allow up to 60 seconds for AI editing requests
+export const maxDuration = 60;
+
 const nvidia = new OpenAI({
     apiKey: (process.env.NVIDIA || process.env.NVIDEA) as string,
     baseURL: 'https://integrate.api.nvidia.com/v1',

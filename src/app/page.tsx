@@ -456,8 +456,23 @@ export default function Home() {
           }
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending message:", error);
+      // If the stream died mid-response, show an error in the assistant message
+      const assistantId = (Date.now() + 1).toString();
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1];
+        // If there's already an assistant message that's empty or has some content, append error
+        if (lastMsg && lastMsg.role === 'assistant') {
+          const errorNotice = "\n\n⚠️ Connection interrupted. This may be due to server load or network issues. Please try again.";
+          return prev.map(msg =>
+            msg.id === lastMsg.id
+              ? { ...msg, content: (msg.content || '') + errorNotice }
+              : msg
+          );
+        }
+        return prev;
+      });
     } finally {
       setIsLoading(false);
       setCurrentReasoning("");
