@@ -15,10 +15,21 @@ import {
   ChevronRight,
   LogOut,
   User,
+  Settings,
+  CreditCard,
+  Bell,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import {
   Sidebar,
@@ -217,23 +228,53 @@ export function AppSidebar() {
         </div>
 
         {userEmail && (
-          <div className="flex items-center justify-between px-3 py-2 text-slate-600 group-data-[collapsible=icon]:hidden">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <div className="h-6 w-6 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
-                <User className="h-3 w-3 text-slate-500" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div className="flex items-center justify-between px-3 py-2 text-slate-600 hover:bg-slate-50 rounded-lg cursor-pointer transition-all group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:justify-center">
+                <div className="flex items-center gap-3 flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
+                  <div className="h-7 w-7 rounded-full bg-slate-900 flex items-center justify-center shrink-0 shadow-sm border border-slate-200">
+                    <User className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[12px] font-bold text-slate-900 truncate tracking-tight">
+                      {userEmail.split('@')[0]}
+                    </span>
+                    <span className="text-[10px] text-slate-400 truncate uppercase tracking-widest font-bold">
+                      Professional
+                    </span>
+                  </div>
+                </div>
+                {/* Mobile/Icon mode avatar */}
+                <div className="hidden group-data-[collapsible=icon]:flex h-8 w-8 rounded-full bg-slate-900 items-center justify-center shadow-sm border border-slate-200">
+                  <User className="h-4 w-4 text-white" />
+                </div>
+                <ChevronRight className="h-3.5 w-3.5 text-slate-300 group-data-[collapsible=icon]:hidden" />
               </div>
-              <span className="text-[12px] font-medium truncate text-slate-500">
-                {userEmail}
-              </span>
-            </div>
-            <button 
-              onClick={handleSignOut}
-              className="p-1.5 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
-              title="Sign Out"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-            </button>
-          </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="right" className="w-56 rounded-xl shadow-xl border-slate-100 p-1">
+              <DropdownMenuLabel className="px-2 py-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Account</DropdownMenuLabel>
+              <DropdownMenuItem className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors">
+                <User className="h-4 w-4 text-slate-500" />
+                <span className="text-sm font-medium">Profile</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors">
+                <Settings className="h-4 w-4 text-slate-500" />
+                <span className="text-sm font-medium">Settings</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors text-slate-400">
+                <CreditCard className="h-4 w-4" />
+                <span className="text-sm font-medium">Billing</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-slate-50 my-1" />
+              <DropdownMenuItem 
+                onClick={handleSignOut}
+                className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-red-50 text-red-600 transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="text-sm font-bold">Log Out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </SidebarFooter>
     </Sidebar>
