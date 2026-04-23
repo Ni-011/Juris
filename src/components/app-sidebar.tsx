@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   MessageSquare,
+  FileSignature,
   Folder,
   Workflow,
   History,
@@ -103,7 +104,7 @@ export function AppSidebar() {
       <SidebarContent className="px-2 mt-2">
         <SidebarMenu className="gap-0.5">
           {navItems.map((item) => {
-            const active = isActive(item.href);
+            const active = item.href ? isActive(item.href) : false;
             const isVault = item.title === "Vault";
 
             return (
@@ -169,7 +170,7 @@ export function AppSidebar() {
                   /* All other items: use SidebarMenuButton with render prop for <Link> */
                   <SidebarMenuButton
                     isActive={active}
-                    render={<Link href={item.href} />}
+                    render={<Link href={item.href || "#"} />}
                     className={`gap-3 py-2 px-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
                       active
                         ? "bg-slate-100 text-slate-900 font-semibold"

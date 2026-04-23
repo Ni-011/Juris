@@ -6,10 +6,10 @@ import { Pinecone } from "@pinecone-database/pinecone";
  */
 
 const pc = new Pinecone({
-  apiKey: process.env.PINECONE_DB_KEY!,
+  apiKey: process.env.PINECONE_API_KEY!,
 });
 
-const INDEX_NAME = "juris-legal-docs";
+const INDEX_NAME = "juris";
 
 export function getIndex() {
   return pc.index({ name: INDEX_NAME });
