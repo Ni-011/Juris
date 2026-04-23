@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { documents, analysisJobs } from "@/drizzle/schema";
+import { documents, analysisJobs, vaults } from "@/drizzle/schema";
 import { eq, and } from "drizzle-orm";
+import { requireAuth } from "@/utils/supabase/server";
 import {
   parseIntent,
   buildFilters,
@@ -15,9 +16,21 @@ export async function POST(
   { params }: { params: Promise<{ vaultId: string }> }
 ) {
   try {
+    const { user } = await requireAuth();
     const { vaultId } = await params;
     const body = await req.json();
     const { messages } = body;
+
+    // Verify vault belongs to user
+    const [vault] = await db
+      .select()
+      .from(vaults)
+      .where(and(eq(vaults.id, vaultId), eq(vaults.tenantId, user.id)))
+      .limit(1);
+
+    if (!vault) {
+      return NextResponse.json({ error: "Vault not found or unauthorized" }, { status: 404 });
+    }
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: "Messages array required" }, { status: 400 });

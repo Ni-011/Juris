@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { vaults, documents, documentChunks, ingestionJobs, analysisJobs } from "@/drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { deleteVaultFiles } from "@/lib/supabase-storage";
 import { deleteVaultVectors } from "@/lib/pinecone";
+import { requireAuth } from "@/utils/supabase/server";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -12,16 +13,17 @@ interface RouteParams {
 // GET /api/vaults/[vaultId] – Get a single vault with stats
 export async function GET(req: Request, { params }: RouteParams) {
   try {
+    const { user } = await requireAuth();
     const { vaultId } = await params;
 
     const [vault] = await db
       .select()
       .from(vaults)
-      .where(eq(vaults.id, vaultId))
+      .where(and(eq(vaults.id, vaultId), eq(vaults.tenantId, user.id)))
       .limit(1);
 
     if (!vault) {
-      return NextResponse.json({ error: "Vault not found" }, { status: 404 });
+      return NextResponse.json({ error: "Vault not found or unauthorized" }, { status: 404 });
     }
 
     // Get document count and status breakdown
@@ -56,6 +58,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 // PATCH /api/vaults/[vaultId] – Update vault metadata
 export async function PATCH(req: Request, { params }: RouteParams) {
   try {
+    const { user } = await requireAuth();
     const { vaultId } = await params;
     const body = await req.json();
     const { name, description } = body;
@@ -67,11 +70,11 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     const [updated] = await db
       .update(vaults)
       .set(updates)
-      .where(eq(vaults.id, vaultId))
+      .where(and(eq(vaults.id, vaultId), eq(vaults.tenantId, user.id)))
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Vault not found" }, { status: 404 });
+      return NextResponse.json({ error: "Vault not found or unauthorized" }, { status: 404 });
     }
 
     return NextResponse.json({ vault: updated });
@@ -87,17 +90,18 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 // DELETE /api/vaults/[vaultId] – Delete vault and cascade
 export async function DELETE(req: Request, { params }: RouteParams) {
   try {
+    const { user } = await requireAuth();
     const { vaultId } = await params;
 
-    // Check vault exists
+    // Check vault exists and belongs to user
     const [vault] = await db
       .select()
       .from(vaults)
-      .where(eq(vaults.id, vaultId))
+      .where(and(eq(vaults.id, vaultId), eq(vaults.tenantId, user.id)))
       .limit(1);
 
     if (!vault) {
-      return NextResponse.json({ error: "Vault not found" }, { status: 404 });
+      return NextResponse.json({ error: "Vault not found or unauthorized" }, { status: 404 });
     }
 
     // Clean up Pinecone vectors for the vault

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { documents, vaults, ingestionJobs } from "@/drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { generateReadUrl } from "@/lib/supabase-storage";
 import { processIngestionJob } from "@/lib/pipeline";
 import { createHash } from "crypto";
+import { requireAuth } from "@/utils/supabase/server";
 
 interface RouteParams {
   params: Promise<{ vaultId: string }>;
@@ -35,7 +36,19 @@ function getDocType(
 // GET /api/vaults/[vaultId]/documents – List documents in a vault
 export async function GET(req: Request, { params }: RouteParams) {
   try {
+    const { user } = await requireAuth();
     const { vaultId } = await params;
+
+    // Verify vault belongs to user
+    const [vault] = await db
+      .select()
+      .from(vaults)
+      .where(and(eq(vaults.id, vaultId), eq(vaults.tenantId, user.id)))
+      .limit(1);
+
+    if (!vault) {
+      return NextResponse.json({ error: "Vault not found or unauthorized" }, { status: 404 });
+    }
 
     const docs = await db
       .select()
@@ -56,17 +69,18 @@ export async function GET(req: Request, { params }: RouteParams) {
 // POST /api/vaults/[vaultId]/documents – Upload documents (multipart/form-data)
 export async function POST(req: Request, { params }: RouteParams) {
   try {
+    const { user } = await requireAuth();
     const { vaultId } = await params;
 
-    // Verify vault exists
+    // Verify vault exists and belongs to user
     const [vault] = await db
       .select()
       .from(vaults)
-      .where(eq(vaults.id, vaultId))
+      .where(and(eq(vaults.id, vaultId), eq(vaults.tenantId, user.id)))
       .limit(1);
 
     if (!vault) {
-      return NextResponse.json({ error: "Vault not found" }, { status: 404 });
+      return NextResponse.json({ error: "Vault not found or unauthorized" }, { status: 404 });
     }
 
     const body = await req.json();

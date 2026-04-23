@@ -2,13 +2,22 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { vaults } from "@/drizzle/schema";
 import { eq } from "drizzle-orm";
+import { createClient } from "@/utils/supabase/server";
 
 // GET /api/vaults – List all vaults
 export async function GET() {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const allVaults = await db
       .select()
       .from(vaults)
+      .where(eq(vaults.tenantId, user.id))
       .orderBy(vaults.createdAt);
 
     return NextResponse.json({ vaults: allVaults });
@@ -24,8 +33,15 @@ export async function GET() {
 // POST /api/vaults – Create a new vault
 export async function POST(req: Request) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
-    const { name, description, tenantId } = body;
+    const { name, description } = body;
 
     if (!name || typeof name !== "string") {
       return NextResponse.json(
@@ -39,7 +55,7 @@ export async function POST(req: Request) {
       .values({
         name: name.trim(),
         description: description?.trim() || null,
-        tenantId: tenantId || "default",
+        tenantId: user.id,
       })
       .returning();
 

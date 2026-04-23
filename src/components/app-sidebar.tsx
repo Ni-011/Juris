@@ -13,9 +13,12 @@ import {
   Plus,
   ChevronDown,
   ChevronRight,
+  LogOut,
+  User,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
 
 import {
   Sidebar,
@@ -35,10 +38,19 @@ interface VaultItem {
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [vaults, setVaults] = React.useState<VaultItem[]>([]);
   const [vaultOpen, setVaultOpen] = React.useState(true);
+  const [userEmail, setUserEmail] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserEmail(user.email ?? null);
+      }
+    });
+
     fetch("/api/vaults")
       .then((r) => r.json())
       .then((data) => {
@@ -50,6 +62,12 @@ export function AppSidebar() {
       })
       .catch(() => {});
   }, []);
+
+  const handleSignOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   const isActive = (path: string) => {
     if (path === "/") return pathname === "/";
@@ -190,13 +208,33 @@ export function AppSidebar() {
           })}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter className="p-4 mt-auto">
-        <div className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all rounded-lg cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
+      <SidebarFooter className="p-4 mt-auto space-y-2 border-t border-slate-100">
+        <div className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all rounded-lg cursor-pointer">
           <HelpCircle className="h-4 w-4 text-slate-500" />
           <span className="text-[13px] font-medium group-data-[collapsible=icon]:hidden">
-            Help
+            Help & Support
           </span>
         </div>
+
+        {userEmail && (
+          <div className="flex items-center justify-between px-3 py-2 text-slate-600 group-data-[collapsible=icon]:hidden">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="h-6 w-6 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
+                <User className="h-3 w-3 text-slate-500" />
+              </div>
+              <span className="text-[12px] font-medium truncate text-slate-500">
+                {userEmail}
+              </span>
+            </div>
+            <button 
+              onClick={handleSignOut}
+              className="p-1.5 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
       </SidebarFooter>
     </Sidebar>
   );
