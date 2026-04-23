@@ -1,0 +1,22 @@
+fastapi
+uvicorn[standard]
+python-multipart
+httpx
+
+# Document parsing
+pymupdf
+python-docx
+beautifulsoup4
+pandas
+openpyxl
+
+# OCR
+pytesseract
+pdf2image
+Pillow
+
+# NLP / Tokenization
+tiktoken
+
+# Language detection
+langdetect

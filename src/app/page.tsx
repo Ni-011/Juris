@@ -612,7 +612,6 @@ export default function Home() {
       </div>
     </Card>
   );
-
   const renderedMessages = React.useMemo(() => (
     <>
       {messages.map((msg) => (
