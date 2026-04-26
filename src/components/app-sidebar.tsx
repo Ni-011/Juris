@@ -5,10 +5,7 @@ import {
   MessageSquare,
   FileSignature,
   Folder,
-  Workflow,
   History,
-  Library,
-  BookOpen,
   HelpCircle,
   Plus,
   ChevronDown,
@@ -53,12 +50,21 @@ export function AppSidebar() {
   const [vaults, setVaults] = React.useState<VaultItem[]>([]);
   const [vaultOpen, setVaultOpen] = React.useState(true);
   const [userEmail, setUserEmail] = React.useState<string | null>(null);
+  const [userName, setUserName] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         setUserEmail(user.email ?? null);
+        // Fetch actual user profile
+        try {
+          const res = await fetch("/api/profile");
+          const data = await res.json();
+          if (data.profile) {
+            setUserName(data.profile.fullName);
+          }
+        } catch {}
       }
     });
 
@@ -89,11 +95,8 @@ export function AppSidebar() {
     { title: "Assistant", icon: MessageSquare, href: "/" },
     { title: "Draft", icon: FileSignature, href: "/draft" },
     { title: "Vault", icon: Folder, href: "/vault" },
-    { title: "Workflows", icon: Workflow },
-    { title: "History", icon: History },
-    { title: "Library", icon: Library },
-    { title: "Guidance", icon: BookOpen },
-];
+    { title: "History", icon: History, href: "/history" },
+  ];
 
   return (
     <Sidebar
@@ -236,12 +239,12 @@ export function AppSidebar() {
                     <User className="h-3.5 w-3.5 text-white" />
                   </div>
                   <div className="flex flex-col min-w-0">
-                    <span className="text-[12px] font-bold text-slate-900 truncate tracking-tight">
-                      {userEmail.split('@')[0]}
-                    </span>
-                    <span className="text-[10px] text-slate-400 truncate uppercase tracking-widest font-bold">
-                      Professional
-                    </span>
+<span className="text-[12px] font-bold text-slate-900 truncate tracking-tight">
+                  {userName || userEmail?.split('@')[0]}
+                </span>
+                <span className="text-[10px] text-slate-400 truncate uppercase tracking-widest font-bold">
+                  Professional
+                </span>
                   </div>
                 </div>
                 {/* Mobile/Icon mode avatar */}
@@ -253,10 +256,13 @@ export function AppSidebar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="right" className="w-56 rounded-xl shadow-xl border-slate-100 p-1">
               <DropdownMenuLabel className="px-2 py-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Account</DropdownMenuLabel>
-              <DropdownMenuItem className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors">
-                <User className="h-4 w-4 text-slate-500" />
-                <span className="text-sm font-medium">Profile</span>
-              </DropdownMenuItem>
+<DropdownMenuItem
+                    onClick={() => router.push("/profile")}
+                    className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors"
+                  >
+                    <User className="h-4 w-4 text-slate-500" />
+                    <span className="text-sm font-medium">Profile</span>
+                  </DropdownMenuItem>
               <DropdownMenuItem className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors">
                 <Settings className="h-4 w-4 text-slate-500" />
                 <span className="text-sm font-medium">Settings</span>

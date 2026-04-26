@@ -24,17 +24,26 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Protected routes
-  const isProtectedRoute = request.nextUrl.pathname === '/' ||
-                           request.nextUrl.pathname.startsWith('/vault') || 
-                           request.nextUrl.pathname.startsWith('/draft');
+  // Public auth routes (no auth required)
+  const isPublicAuthRoute =
+    request.nextUrl.pathname === '/login' ||
+    request.nextUrl.pathname === '/forgot-password' ||
+    request.nextUrl.pathname === '/reset-password';
 
+  // Protected routes (auth required)
+  const isProtectedRoute =
+    request.nextUrl.pathname === '/' ||
+    request.nextUrl.pathname.startsWith('/vault') ||
+    request.nextUrl.pathname.startsWith('/draft') ||
+    request.nextUrl.pathname.startsWith('/profile');
+
+  // Redirect unauthenticated users from protected routes to login
   if (isProtectedRoute && !user) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // If user is logged in and tries to access login page, redirect to vault
-  if (request.nextUrl.pathname === '/login' && user) {
+  // Redirect authenticated users away from public auth routes to vault
+  if (isPublicAuthRoute && user) {
     return NextResponse.redirect(new URL("/vault", request.url));
   }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { documents, analysisJobs, vaults } from "@/drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { documents, analysisJobs, vaults, chatSessions, chatMessages } from "@/drizzle/schema";
+import { eq, and, desc } from "drizzle-orm";
 import { requireAuth } from "@/utils/supabase/server";
 import {
   parseIntent,
@@ -19,26 +19,47 @@ export async function POST(
     const { user } = await requireAuth();
     const { vaultId } = await params;
     const body = await req.json();
-    const { messages } = body;
-
-    // Verify vault belongs to user
-    const [vault] = await db
-      .select()
-      .from(vaults)
-      .where(and(eq(vaults.id, vaultId), eq(vaults.tenantId, user.id)))
-      .limit(1);
-
-    if (!vault) {
-      return NextResponse.json({ error: "Vault not found or unauthorized" }, { status: 404 });
-    }
+    let { messages, sessionId } = body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: "Messages array required" }, { status: 400 });
     }
 
-    const latestMessage = messages[messages.length - 1].content;
+    // 1. Ensure a session exists
+    let session;
+    if (sessionId) {
+      [session] = await db
+        .select()
+        .from(chatSessions)
+        .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.tenantId, user.id)))
+        .limit(1);
+    }
 
-    console.log(`[Vault Query] Starting query for vault ${vaultId}: "${latestMessage.substring(0, 50)}..."`);
+    if (!session) {
+      // Create new session if none provided or not found
+      const [newSession] = await db
+        .insert(chatSessions)
+        .values({
+          tenantId: user.id,
+          vaultId: vaultId,
+          title: messages[0].content.substring(0, 50) + (messages[0].content.length > 50 ? "..." : ""),
+        })
+        .returning();
+      session = newSession;
+      sessionId = session.id;
+    }
+
+    const latestMessage = messages[messages.length - 1];
+
+    // 2. Save user message
+    await db.insert(chatMessages).values({
+      sessionId: sessionId,
+      tenantId: user.id,
+      role: "user",
+      content: latestMessage.content,
+    });
+
+    console.log(`[Vault Query] Starting query for vault ${vaultId}: "${latestMessage.content.substring(0, 50)}..."`);
 
     // 1. Fetch available docs in vault for the intent parser
     const availableDocs = await db
@@ -61,7 +82,7 @@ export async function POST(
     }
 
     // Pipeline Stages
-    const intent = await parseIntent(latestMessage, availableDocs);
+    const intent = await parseIntent(latestMessage.content, availableDocs);
     const filters = buildFilters(vaultId, intent);
     const rawMatches = await retrieveAndRerank(intent, filters);
     const balancedEvidence = balanceEvidence(rawMatches, intent);
@@ -109,11 +130,48 @@ export async function POST(
     // Stream response
     const stream = await compileResponseStream(messages, balancedEvidence);
 
-    return new Response(stream, {
+    // 3. Create a wrapper stream to capture assistant response and save it
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let assistantContent = "";
+    
+    const transformStream = new TransformStream({
+      transform(chunk, controller) {
+        const decoded = decoder.decode(chunk, { stream: true });
+        const lines = decoded.split("\n");
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.t) assistantContent += parsed.t;
+          } catch (e) { /* ignore */ }
+        }
+        controller.enqueue(chunk);
+      },
+      async flush() {
+        // Save assistant message when stream completes
+        if (assistantContent) {
+          await db.insert(chatMessages).values({
+            sessionId: sessionId,
+            tenantId: user.id,
+            role: "assistant",
+            content: assistantContent,
+          });
+          
+          // Update session timestamp
+          await db.update(chatSessions)
+            .set({ updatedAt: new Date() })
+            .where(eq(chatSessions.id, sessionId));
+        }
+      }
+    });
+
+    return new Response(stream.pipeThrough(transformStream), {
       headers: {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
+        'Connection': 'keep-alive',
+        'X-Session-Id': sessionId, // Send back session ID
       }
     });
 

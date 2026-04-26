@@ -3,9 +3,13 @@ import { NextResponse } from 'next/server';
 import { searchCases } from '@/lib/vaquill';
 import { Pinecone } from '@pinecone-database/pinecone';
 import { parsePDF } from '@/lib/pdf-parser';
+import { requireAuth } from '@/utils/supabase/server';
+import { db } from '@/lib/db';
+import { chatSessions, chatMessages } from '@/drizzle/schema';
+import { eq, and } from 'drizzle-orm';
 
-// Allow up to 5 minutes for the multi-stage research pipeline
-export const maxDuration = 300;
+export const runtime = 'nodejs'; // Use Node.js runtime for full database compatibility
+export const maxDuration = 300;  // 5 minutes timeout (Pro plan required for >15s)
 
 // Initialize NVIDIA client
 const nvidia = new OpenAI({
@@ -193,7 +197,45 @@ async function fetchStatutesInternal(query: string) {
 
 export async function POST(req: Request) {
     try {
-        const { messages, isResearch, attachments } = await req.json();
+        const { user } = await requireAuth();
+        const body = await req.json();
+        let { messages, isResearch, attachments, sessionId } = body;
+
+        if (!messages || !Array.isArray(messages) || messages.length === 0) {
+            return NextResponse.json({ error: "Messages array required" }, { status: 400 });
+        }
+
+        // 1. Ensure a session exists
+        let session;
+        if (sessionId) {
+            [session] = await db
+                .select()
+                .from(chatSessions)
+                .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.tenantId, user.id)))
+                .limit(1);
+        }
+
+        if (!session) {
+            const [newSession] = await db
+                .insert(chatSessions)
+                .values({
+                    tenantId: user.id,
+                    title: messages[0].content.substring(0, 50) + (messages[0].content.length > 50 ? "..." : ""),
+                })
+                .returning();
+            session = newSession;
+            sessionId = session.id;
+        }
+
+        const latestMessage = messages[messages.length - 1];
+
+        // 2. Save user message
+        await db.insert(chatMessages).values({
+            sessionId: sessionId,
+            tenantId: user.id,
+            role: "user",
+            content: latestMessage.content,
+        });
 
         // Use regex to dynamically strip out previously injected System Context blocks to save thousands of tokens 
         const sanitizeContent = (content: string) => {
@@ -226,15 +268,47 @@ export async function POST(req: Request) {
             const responseStream = new ReadableStream({
                 async start(controller) {
                     let streamClosed = false;
+                    let assistantContent = "";
                     const sendChunk = (data: any) => {
                         if (streamClosed) return;
+                        if (data.t) assistantContent += data.t;
                         try { controller.enqueue(new TextEncoder().encode(JSON.stringify(data) + "\n")); } catch (e) { }
                     };
-                    const closeStream = () => {
+                    const closeStream = async () => {
                         if (streamClosed) return;
                         streamClosed = true;
+                        
+                        // Clear heartbeat interval if it exists
+                        if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+                        // Save assistant message when stream completes
+                        if (assistantContent) {
+                            try {
+                                await db.insert(chatMessages).values({
+                                    sessionId: sessionId,
+                                    tenantId: user.id,
+                                    role: "assistant",
+                                    content: assistantContent,
+                                });
+                                
+                                // Update session timestamp
+                                await db.update(chatSessions)
+                                    .set({ updatedAt: new Date() })
+                                    .where(eq(chatSessions.id, sessionId));
+                            } catch (e) {
+                                console.error("[Chat API] Failed to save message:", e);
+                            }
+                        }
+                        
                         try { controller.close(); } catch (e) { }
                     };
+
+                    // Add a heartbeat to keep the connection alive on Vercel
+                    const heartbeatInterval = setInterval(() => {
+                        if (!streamClosed) {
+                            try { controller.enqueue(new TextEncoder().encode(":\n")); } catch (e) {}
+                        }
+                    }, 15000); // Every 15 seconds
 
                     try {
                         const lastUserMessage = messages[messages.length - 1]?.content || "";
@@ -303,7 +377,12 @@ export async function POST(req: Request) {
             });
 
             return new Response(responseStream, {
-                headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' }
+                headers: { 
+                    'Content-Type': 'text/event-stream', 
+                    'Cache-Control': 'no-cache, no-transform', 
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no' // Prevent Nginx buffering
+                }
             });
         }
 
@@ -313,19 +392,51 @@ export async function POST(req: Request) {
         const stream = new ReadableStream({
             async start(controller) {
                 let streamClosed = false;
+                let assistantContent = "";
 
                 const sendChunk = (data: any) => {
                     if (streamClosed) return;
+                    if (data.t) assistantContent += data.t;
                     try {
                         controller.enqueue(new TextEncoder().encode(JSON.stringify(data) + "\n"));
                     } catch (e) { /* silently ignore */ }
                 };
 
-                const closeStream = () => {
+                const closeStream = async () => {
                     if (streamClosed) return;
                     streamClosed = true;
+                    
+                    // Clear heartbeat interval if it exists
+                    if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+                    // Save assistant message when stream completes
+                    if (assistantContent) {
+                        try {
+                            await db.insert(chatMessages).values({
+                                sessionId: sessionId,
+                                tenantId: user.id,
+                                role: "assistant",
+                                content: assistantContent,
+                            });
+                            
+                            // Update session timestamp
+                            await db.update(chatSessions)
+                                .set({ updatedAt: new Date() })
+                                .where(eq(chatSessions.id, sessionId));
+                        } catch (e) {
+                            console.error("[Chat API] Failed to save message:", e);
+                        }
+                    }
+                    
                     try { controller.close(); } catch (e) { /* already closed */ }
                 };
+
+                // Add a heartbeat to keep the connection alive on Vercel
+                const heartbeatInterval = setInterval(() => {
+                    if (!streamClosed) {
+                        try { controller.enqueue(new TextEncoder().encode(":\n")); } catch (e) {}
+                    }
+                }, 15000); // Every 15 seconds
 
                 try {
                     console.log(`[Chat API] [Stage 1] Analyzer Starting...`);
@@ -555,7 +666,15 @@ export async function POST(req: Request) {
             },
         });
 
-        return new Response(stream, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' } });
+        return new Response(stream, { 
+            headers: { 
+                'Content-Type': 'text/event-stream', 
+                'Cache-Control': 'no-cache, no-transform', 
+                'Connection': 'keep-alive',
+                'X-Session-Id': sessionId,
+                'X-Accel-Buffering': 'no' // Prevent Nginx buffering
+            } 
+        });
     } catch (error: any) {
         console.error('Error in chat route:', error.message);
         return NextResponse.json({ error: 'Critical failure' }, { status: 500 });

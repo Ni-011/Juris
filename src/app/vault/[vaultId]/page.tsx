@@ -1,11 +1,10 @@
 "use client";
 
-import React from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
 import { FileIcon } from "@/components/file-icon";
 import {
@@ -19,15 +18,21 @@ import {
   FileText,
   HardDrive,
   Loader2,
-  X,
   ChevronRight,
   AlertTriangle,
   Sparkles,
-  Search as SearchIcon,
+  History,
+  Share2,
+  Clock,
+  ExternalLink,
+  Copy,
+  Check,
+  X
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { LoadingScreen } from "@/components/ui/loading-screen";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -89,33 +94,45 @@ function formatDate(date: string) {
 
 // ─── Page ───────────────────────────────────────────────
 
-export default function VaultDetailPage() {
+import { Suspense } from "react";
+
+function VaultDetailContent() {
   const params = useParams();
   const router = useRouter();
   const vaultId = params.vaultId as string;
+  const searchParams = useSearchParams();
+  const sessionParam = searchParams.get('session');
 
   // State
-  const [vault, setVault] = React.useState<VaultData | null>(null);
-  const [stats, setStats] = React.useState<VaultStats | null>(null);
-  const [documents, setDocuments] = React.useState<DocumentData[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [uploading, setUploading] = React.useState(false);
-  const [isDragging, setIsDragging] = React.useState(false);
-  const [deleting, setDeleting] = React.useState<string | null>(null);
-  const [reprocessing, setReprocessing] = React.useState<string | null>(null);
-  const [showDeleteVault, setShowDeleteVault] = React.useState(false);
+  const [vault, setVault] = useState<VaultData | null>(null);
+  const [stats, setStats] = useState<VaultStats | null>(null);
+  const [documents, setDocuments] = useState<DocumentData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [reprocessing, setReprocessing] = useState<string | null>(null);
+  const [showDeleteVault, setShowDeleteVault] = useState(false);
 
   // Chat state
-  const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = React.useState("");
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const chatEndRef = React.useRef<HTMLDivElement>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  // Sessions & History
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ─── Data fetching ──────────────────────────────────
 
-  const fetchVault = React.useCallback(async () => {
+  const fetchVault = useCallback(async () => {
     try {
       const res = await fetch(`/api/vaults/${vaultId}`);
       const data = await res.json();
@@ -126,7 +143,7 @@ export default function VaultDetailPage() {
     }
   }, [vaultId]);
 
-  const fetchDocuments = React.useCallback(async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
       const res = await fetch(`/api/vaults/${vaultId}/documents`);
       const data = await res.json();
@@ -138,18 +155,32 @@ export default function VaultDetailPage() {
     }
   }, [vaultId]);
 
-  //safe practice if just in useEffect then this is okay else this is not okay
-  React.useEffect(() => {
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/chat/sessions?vaultId=${vaultId}`);
+      const data = await res.json();
+      if (data.sessions) {
+        setSessions(data.sessions);
+      }
+    } catch (e) {
+      console.error("Failed to fetch sessions:", e);
+    }
+  }, [vaultId]);
+
+  useEffect(() => {
     fetchVault();
     fetchDocuments();
-  }, [fetchVault, fetchDocuments]);
+    fetchSessions();
+    
+    if (sessionParam) {
+      loadSession(sessionParam);
+    }
+  }, [fetchVault, fetchDocuments, fetchSessions, vaultId, sessionParam]);
 
   // Poll every 5s while any doc is processing
-  React.useEffect(() => {
+  useEffect(() => {
     const hasProcessing = documents.some((d) =>
-      ["pending", "parsing", "chunking", "embedding", "analyzing"].includes(
-        d.status
-      )
+      ["pending", "processing"].includes(d.status)
     );
     if (!hasProcessing) return;
 
@@ -157,74 +188,34 @@ export default function VaultDetailPage() {
       fetchDocuments();
       fetchVault();
     }, 5000);
-
     return () => clearInterval(interval);
   }, [documents, fetchDocuments, fetchVault]);
 
-  // ─── File upload ────────────────────────────────────
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
 
-  const handleUpload = async (files: FileList | File[]) => {
+  // ─── Handlers ───────────────────────────────────────
+
+  const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+
     setUploading(true);
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
 
     try {
-      const fileArray = Array.from(files);
-
-      // Step 1: Get presigned URLs
-      const intentRes = await fetch(`/api/vaults/${vaultId}/documents/presigned`, {
+      const res = await fetch(`/api/vaults/${vaultId}/documents`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          files: fileArray.map(f => ({ fileName: f.name, fileType: f.type, fileSize: f.size }))
-        })
+        body: formData,
       });
-
-      if (!intentRes.ok) throw new Error("Failed to get upload URLs");
-      const { urls } = await intentRes.json();
-
-      console.log(urls);
-
-      // Step 2: Upload directly to Supabase
-      const uploadedFiles = [];
-      for (let i = 0; i < fileArray.length; i++) {
-        const file = fileArray[i];
-        const urlData = urls.find((u: any) => u.fileName === file.name);
-        if (!urlData) continue;
-
-        const uploadRes = await fetch(urlData.uploadUrl, {
-          method: "PUT",
-          body: file,
-          headers: {
-            "Content-Type": file.type || "application/octet-stream"
-          }
-        });
-
-        if (!uploadRes.ok) {
-          throw new Error(`Failed to upload ${file.name}`);
-        }
-
-        uploadedFiles.push({
-          fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size,
-          storagePath: urlData.storagePath,
-        });
-      }
-
-      // Step 3: Complete ingestion
-      if (uploadedFiles.length > 0) {
-        const res = await fetch(`/api/vaults/${vaultId}/documents`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ files: uploadedFiles })
-        });
-        if (res.ok) {
-          fetchDocuments();
-          fetchVault();
-        }
-      }
+      if (!res.ok) throw new Error("Upload failed");
+      fetchDocuments();
+      fetchVault();
     } catch (e) {
-      console.error("Upload failed:", e);
+      console.error("Upload error:", e);
     } finally {
       setUploading(false);
     }
@@ -233,12 +224,11 @@ export default function VaultDetailPage() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files) handleUpload(e.dataTransfer.files);
+    handleFileUpload(e.dataTransfer.files);
   };
 
-  // ─── Document actions ───────────────────────────────
-
   const handleDeleteDoc = async (docId: string) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
     setDeleting(docId);
     try {
       await fetch(`/api/vaults/${vaultId}/documents/${docId}`, {
@@ -305,6 +295,7 @@ export default function VaultDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sessionId: sessionId,
           messages: [
             ...chatMessages.map(m => ({ role: m.role, content: m.content })),
             { role: "user", content: userMsg.content }
@@ -314,11 +305,17 @@ export default function VaultDetailPage() {
 
       if (!response.ok) throw new Error("Failed to search vault");
 
+      // Get session ID from header if it was newly created
+      const newSessionId = response.headers.get("X-Session-Id");
+      if (newSessionId && !sessionId) {
+        setSessionId(newSessionId);
+        fetchSessions();
+      }
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder("utf-8");
       let done = false;
       let assistantResponse = "";
-      let citationsMetadata: any = null;
 
       while (reader && !done) {
         const { value, done: doneReading } = await reader.read();
@@ -340,67 +337,104 @@ export default function VaultDetailPage() {
                   return newMsgs;
                 });
               }
-              if (parsed.m) {
-                citationsMetadata = parsed.m;
-              }
-            } catch (e) {
-              // Ignore incomplete lines
-            }
+            } catch (e) { /* ignore */ }
           }
         }
       }
-
-      if (citationsMetadata?.citations?.length > 0) {
-        setChatMessages(prev => {
-          const newMsgs = [...prev];
-          const last = newMsgs[newMsgs.length - 1];
-          last.content += "\n\n**Sources:**\n" + citationsMetadata.citations.map(
-            (c: any) => `- [[${c.id}]] ${c.fileName} (Page ${c.pageNumber}${c.sectionHeading ? ', ' + c.sectionHeading : ''})`
-          ).join("\n");
-          return newMsgs;
-        });
-      }
-
-    } catch (error: any) {
-      setChatMessages(prev => {
-        const newMsgs = [...prev];
-        const last = newMsgs[newMsgs.length - 1];
-        last.content = "⚠️ An error occurred while searching your vault.";
-        return newMsgs;
-      });
+    } catch (e) {
+      console.error("Chat error:", e);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: "Sorry, I encountered an error searching your vault.",
+        },
+      ]);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  React.useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+  const loadSession = async (sId: string) => {
+    try {
+      setIsSubmitting(true);
+      const res = await fetch(`/api/chat/sessions/${sId}`);
+      const data = await res.json();
+      if (data.session) {
+        setSessionId(data.session.id);
+        setChatMessages(data.messages || []);
+        setIsPublic(data.session.isPublic);
+        setShareToken(data.session.shareToken);
+        setShowHistory(false);
+      }
+    } catch (e) {
+      console.error("Failed to load session:", e);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-  // ─── Render ─────────────────────────────────────────
+  const handleNewChat = () => {
+    setSessionId(null);
+    setChatMessages([]);
+    setIsPublic(false);
+    setShareToken(null);
+  };
+
+  const toggleShare = async () => {
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/chat/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: !isPublic }),
+      });
+      const data = await res.json();
+      if (data.session) {
+        setIsPublic(data.session.isPublic);
+        setShareToken(data.session.shareToken);
+      }
+    } catch (e) {
+      console.error("Failed to toggle share:", e);
+    }
+  };
+
+  const deleteSession = async (sId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this conversation?")) return;
+    try {
+      const res = await fetch(`/api/chat/sessions/${sId}`, { method: "DELETE" });
+      if (res.ok) {
+        setSessions(prev => prev.filter(s => s.id !== sId));
+        if (sessionId === sId) handleNewChat();
+      }
+    } catch (e) {
+      console.error("Failed to delete session:", e);
+    }
+  };
+
+  const copyShareLink = () => {
+    if (!shareToken) return;
+    const url = `${window.location.origin}/share/${shareToken}`;
+    navigator.clipboard.writeText(url);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
 
   if (loading || !vault) {
-    return (
-      <div className="flex h-screen w-full bg-[#FAFAFA] overflow-hidden">
-        <AppSidebar />
-        <main className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-6 w-6 text-slate-400 animate-spin" />
-        </main>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (
-    <div className="flex h-screen w-full bg-[#FAFAFA] overflow-hidden">
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
       <AppSidebar />
-
       <input
         type="file"
+        ref={fileInputRef}
+        onChange={(e) => handleFileUpload(e.target.files)}
         multiple
         className="hidden"
-        ref={fileInputRef}
-        onChange={(e) => e.target.files && handleUpload(e.target.files)}
-        accept=".pdf,.docx,.txt,.html,.csv,.png,.jpg,.jpeg,.tiff,.bmp"
       />
 
       <main className="flex-1 flex flex-col relative overflow-hidden max-h-screen">
@@ -421,30 +455,21 @@ export default function VaultDetailPage() {
             <h1 className="text-lg font-serif font-semibold tracking-tight text-slate-900">
               {vault.name}
             </h1>
-            {vault.description && (
-              <span className="text-[13px] text-slate-400 hidden lg:inline">
-                — {vault.description}
-              </span>
-            )}
           </div>
 
           <div className="flex items-center gap-2">
             <Button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="gap-2 bg-slate-900 hover:bg-black text-white font-semibold rounded-lg h-8 px-4 text-[12px] transition-all hover:scale-105 active:scale-95 shadow-sm cursor-pointer disabled:opacity-50"
+              className="gap-2 bg-slate-900 hover:bg-black text-white font-semibold rounded-lg h-8 px-4 text-[12px] transition-all cursor-pointer"
             >
-              {uploading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Upload className="h-3.5 w-3.5" />
-              )}
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
               Upload
             </Button>
             <Button
               variant="outline"
               onClick={() => setShowDeleteVault(true)}
-              className="h-8 px-3 text-[12px] font-medium text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 cursor-pointer"
+              className="h-8 px-3 text-[12px] font-medium text-red-600 border-red-200 hover:bg-red-50 cursor-pointer"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -453,129 +478,82 @@ export default function VaultDetailPage() {
 
         {/* 60/40 split */}
         <div className="flex-1 flex overflow-hidden">
-          {/* ═══ LEFT PANEL: Documents (60%) ═══ */}
-          <div className="flex-[3] flex flex-col overflow-hidden min-w-0">
+          {/* LEFT PANEL: Documents */}
+          <div className="flex-[3] flex flex-col overflow-hidden min-w-0 border-r border-slate-100 bg-white/50">
             {/* Upload zone */}
             <div
-              className={`mx-4 mt-4 upload-zone ${isDragging ? "drag-active" : ""
-                }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
+              className={`m-4 border-2 border-dashed rounded-xl transition-all ${
+                isDragging ? "border-slate-900 bg-slate-50" : "border-slate-100 hover:border-slate-200"
+              }`}
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
             >
-              <div className="flex flex-col items-center justify-center py-6 px-4">
+              <div className="flex flex-col items-center justify-center py-8 px-4">
                 <Upload className="h-8 w-8 text-slate-300 mb-2" />
-                <p className="text-sm font-medium text-slate-600">
-                  Drag & drop documents here
-                </p>
-                <p className="text-[12px] text-slate-400 mt-1">
-                  PDF, DOCX, TXT, HTML, CSV, Images
-                </p>
+                <p className="text-sm font-medium text-slate-600">Drag & drop documents here</p>
+                <p className="text-[12px] text-slate-400 mt-1">PDF, DOCX, TXT, HTML, CSV, Images</p>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => fileInputRef.current?.click()}
                   className="mt-3 h-8 text-[12px] font-medium cursor-pointer"
                 >
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
                   Browse files
                 </Button>
               </div>
             </div>
 
-            {/* Stats bar */}
+            {/* Stats */}
             {stats && stats.totalDocuments > 0 && (
-              <div className="mx-4 mt-3 flex items-center gap-4 text-[12px] text-slate-500">
-                <span className="flex items-center gap-1.5">
-                  <FileText className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="font-semibold text-slate-700">
-                    {stats.totalDocuments}
-                  </span>{" "}
-                  documents
+              <div className="px-4 mb-3 flex items-center gap-4 text-[12px] text-slate-500">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <FileText className="h-3.5 w-3.5" />
+                  {stats.totalDocuments} docs
                 </span>
-                <span className="flex items-center gap-1.5">
-                  <HardDrive className="h-3.5 w-3.5 text-slate-400" />
+                <span className="flex items-center gap-1.5 font-medium">
+                  <HardDrive className="h-3.5 w-3.5" />
                   {formatBytes(stats.totalSize)}
                 </span>
               </div>
             )}
 
             {/* Document list */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar mt-3 px-4 pb-4">
+            <div className="flex-1 overflow-y-auto px-4 pb-4 custom-scrollbar">
               <AnimatePresence>
                 {documents.length === 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex flex-col items-center justify-center h-48 text-center"
-                  >
-                    <FileText className="h-10 w-10 text-slate-200 mb-3" />
-                    <p className="text-sm text-slate-400">
-                      No documents uploaded yet
-                    </p>
-                  </motion.div>
+                  <div className="flex flex-col items-center justify-center h-48 text-center text-slate-400">
+                    <FileText className="h-10 w-10 opacity-20 mb-3" />
+                    <p className="text-sm">No documents uploaded yet</p>
+                  </div>
                 ) : (
                   <div className="space-y-1">
                     {documents.map((doc, i) => (
                       <motion.div
                         key={doc.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.02 }}
-                        className="doc-row flex items-center gap-3 px-3 py-2.5 rounded-lg group"
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-100 group transition-all"
                       >
                         <FileIcon docType={doc.docType} size="sm" />
-
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[13px] font-medium text-slate-800 truncate">
-                              {doc.fileName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-0.5">
+                          <p className="text-[13px] font-medium text-slate-800 truncate">{doc.fileName}</p>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
                             <span>{doc.docType.toUpperCase()}</span>
-                            {doc.fileSize && (
-                              <span>{formatBytes(doc.fileSize)}</span>
-                            )}
-                            {doc.pageCount && (
-                              <span>{doc.pageCount} pages</span>
-                            )}
-                            <span>{formatDate(doc.uploadTime)}</span>
+                            <span>•</span>
+                            <span>{formatBytes(doc.fileSize || 0)}</span>
                           </div>
                         </div>
-
                         <StatusBadge status={doc.status} />
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
                           {doc.status === "failed" && (
-                            <button
-                              onClick={() => handleReprocess(doc.id)}
-                              disabled={reprocessing === doc.id}
-                              className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all cursor-pointer"
-                              title="Re-process"
-                            >
-                              {reprocessing === doc.id ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <RefreshCw className="h-3.5 w-3.5" />
-                              )}
+                            <button onClick={() => handleReprocess(doc.id)} className="h-7 w-7 rounded-md hover:bg-slate-50 text-slate-400 hover:text-slate-900 flex items-center justify-center cursor-pointer">
+                              <RefreshCw className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          <button
-                            onClick={() => handleDeleteDoc(doc.id)}
-                            disabled={deleting === doc.id}
-                            className="h-7 w-7 rounded-md flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer"
-                            title="Delete"
-                          >
-                            {deleting === doc.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
-                            )}
+                          <button onClick={() => handleDeleteDoc(doc.id)} className="h-7 w-7 rounded-md hover:bg-red-50 text-slate-400 hover:text-red-600 flex items-center justify-center cursor-pointer">
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </motion.div>
@@ -586,215 +564,194 @@ export default function VaultDetailPage() {
             </div>
           </div>
 
-          {/* ═══ RIGHT PANEL: Chat (40%) ═══ */}
-          <div className="flex-[2] vault-chat-panel flex flex-col overflow-hidden">
+          {/* RIGHT PANEL: Chat */}
+          <div className="flex-[2] flex flex-col overflow-hidden bg-white">
             {/* Chat header */}
             <div className="px-4 py-3 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 bg-slate-900 rounded-lg flex items-center justify-center">
-                  <Sparkles className="h-3.5 w-3.5 text-white" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-7 w-7 bg-slate-900 rounded-lg flex items-center justify-center shadow-lg shadow-slate-200">
+                    <Sparkles className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-[13px] font-bold text-slate-900 tracking-tight">Vault Assistant</h3>
+                    <p className="text-[11px] text-slate-400 font-medium">Smart document search</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-[13px] font-semibold text-slate-900">
-                    Vault Assistant
-                  </h3>
-                  <p className="text-[11px] text-slate-400">
-                    Ask questions about your documents
-                  </p>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setShowHistory(!showHistory)} className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${showHistory ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:bg-slate-50"}`}>
+                    {showHistory ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
+                  </button>
+                  <button onClick={handleNewChat} className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-50 transition-all cursor-pointer">
+                    <Plus className="h-4 w-4" />
+                  </button>
+                  {sessionId && (
+                    <button onClick={toggleShare} className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${isPublic ? "bg-amber-50 text-amber-600" : "text-slate-400 hover:bg-slate-50"}`}>
+                      <Share2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {/* Share link */}
+              <AnimatePresence>
+                {isPublic && shareToken && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-2 overflow-hidden">
+                    <div className="p-2 bg-amber-50 border border-amber-100 rounded-lg flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ExternalLink className="h-3 w-3 text-amber-600 shrink-0" />
+                        <span className="text-[11px] font-medium text-amber-800 truncate">Public sharing enabled</span>
+                      </div>
+                      <button onClick={copyShareLink} className="h-6 px-2 rounded bg-white border border-amber-200 text-[10px] font-bold text-amber-700 hover:bg-amber-50 transition-all cursor-pointer flex items-center gap-1 shrink-0">
+                        {isCopied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+                        {isCopied ? "Copied" : "Copy Link"}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-            {/* Chat messages */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-              {chatMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center px-6">
-                  <div className="h-14 w-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100 mb-4">
-                    <MessageSquare className="h-7 w-7 text-slate-300" />
-                  </div>
-                  <h4 className="text-sm font-semibold text-slate-700 mb-1">
-                    Chat with your vault
-                  </h4>
-                  <p className="text-[12px] text-slate-400 max-w-[240px] leading-relaxed">
-                    Ask questions about the documents in this vault. Juris will
-                    search across all your files to find answers.
-                  </p>
-
-                  <div className="mt-6 space-y-2 w-full max-w-[260px]">
-                    {[
-                      "Summarize the key clauses",
-                      "Compare agreement terms",
-                      "Find risk provisions",
-                    ].map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        onClick={() => {
-                          setChatInput(suggestion);
-                        }}
-                        className="w-full text-left text-[12px] text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 transition-all cursor-pointer hover:border-slate-200"
-                      >
-                        <SearchIcon className="h-3 w-3 inline mr-2 text-slate-400" />
-                        {suggestion}
+            <div className="flex-1 relative flex flex-col overflow-hidden">
+              {/* History Overlay */}
+              <AnimatePresence>
+                {showHistory && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[100] bg-white flex flex-col shadow-2xl">
+                    <div className="h-14 border-b border-slate-100 flex items-center justify-between px-6 bg-white/80 backdrop-blur-md sticky top-0 z-10">
+                      <h4 className="text-[13px] font-bold text-slate-900 flex items-center gap-2">
+                        <History className="h-3.5 w-3.5 text-slate-400" />
+                        Chat History
+                      </h4>
+                      <button onClick={() => setShowHistory(false)} className="h-7 w-7 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-900 flex items-center justify-center transition-all cursor-pointer">
+                        <X className="h-4 w-4" />
                       </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                chatMessages.map((msg) => (
-                  <motion.div
-                    key={msg.id}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
-                      }`}
-                  >
-                    <div
-                      className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed ${msg.role === "user"
-                        ? "bg-slate-100 text-slate-900 rounded-br-sm"
-                        : "bg-white border border-slate-100 text-slate-700 rounded-bl-sm shadow-sm"
-                        }`}
-                    >
-                      {msg.role === "assistant" && (
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <div className="h-4 w-4 bg-slate-900 rounded flex items-center justify-center">
-                            <span className="text-white text-[8px] font-bold font-serif">
-                              J
-                            </span>
-                          </div>
-                          <span className="text-[11px] font-semibold text-slate-900">
-                            Juris
-                          </span>
-                        </div>
-                      )}
-                      {msg.role === "assistant" ? (
-                        <div className="markdown-content max-w-full overflow-hidden">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              p: ({ node, ...props }) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
-                              h1: ({ node, ...props }) => <h1 className="text-lg font-semibold mt-4 mb-2 text-slate-900" {...props} />,
-                              h2: ({ node, ...props }) => <h2 className="text-base font-semibold mt-3 mb-2 text-slate-900" {...props} />,
-                              h3: ({ node, ...props }) => <h3 className="text-sm font-semibold mt-2 mb-1 text-slate-900" {...props} />,
-                              ul: ({ node, ...props }) => <ul className="list-disc pl-4 mb-2 space-y-1" {...props} />,
-                              ol: ({ node, ...props }) => <ol className="list-decimal pl-4 mb-2 space-y-1" {...props} />,
-                              li: ({ node, ...props }) => <li className="pl-1" {...props} />,
-                              strong: ({ node, ...props }) => <strong className="font-semibold text-slate-900" {...props} />,
-                              a: ({ node, ...props }) => <a className="text-blue-600 hover:text-blue-800 underline underline-offset-2" {...props} />,
-                              blockquote: ({ node, ...props }) => <blockquote className="border-l-2 border-slate-300 pl-3 italic text-slate-600 mb-2" {...props} />,
-                              table: ({ node, ...props }) => <div className="overflow-x-auto my-3"><table className="min-w-full text-left text-[12px] border border-slate-200 rounded-lg border-collapse" {...props} /></div>,
-                              thead: ({ node, ...props }) => <thead className="bg-slate-50 text-slate-700" {...props} />,
-                              th: ({ node, ...props }) => <th className="px-3 py-2 font-semibold border border-slate-200 bg-slate-50 text-slate-900" {...props} />,
-                              td: ({ node, ...props }) => <td className="px-3 py-2 border border-slate-200" {...props} />,
-                              code: ({ node, className, children, ...props }) => {
-                                const match = /language-(\w+)/.exec(className || "");
-                                return !match ? (
-                                  <code className="bg-slate-100 border border-slate-200 text-orange-600 px-1 py-0.5 rounded text-[12px] font-mono break-words" {...props}>
-                                    {children}
-                                  </code>
-                                ) : (
-                                  <pre className="bg-slate-800 text-slate-100 p-3 rounded-lg overflow-x-auto text-[12px] my-2 custom-scrollbar">
-                                    <code className={className} {...props}>{children}</code>
-                                  </pre>
-                                );
-                              },
-                            }}
-                          >
-                            {msg.content}
-                          </ReactMarkdown>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1">
+                      {sessions.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                          <MessageSquare className="h-8 w-8 opacity-10 mb-2" />
+                          <p className="text-[11px]">No history found</p>
                         </div>
                       ) : (
-                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                      sessions.map((s) => (
+                        <div key={s.id} className="relative group">
+                          <button
+                            onClick={() => loadSession(s.id)}
+                            className={`w-full text-left p-2.5 rounded-lg transition-all cursor-pointer group ${
+                              sessionId === s.id ? "bg-slate-900 text-white shadow-lg shadow-slate-200" : "hover:bg-slate-50 text-slate-700"
+                            }`}
+                          >
+                            <p className="text-[12px] font-semibold truncate leading-tight pr-6">{s.title || "New Chat"}</p>
+                            <div className="flex items-center gap-2 mt-1 opacity-60">
+                              <Clock className="h-2.5 w-2.5" />
+                              <span className="text-[10px]">{new Date(s.updatedAt).toLocaleDateString()}</span>
+                              {s.isPublic && <Share2 className="h-2.5 w-2.5 text-amber-500" />}
+                            </div>
+                          </button>
+                          <button
+                            onClick={(e) => deleteSession(s.id, e)}
+                            className={`absolute top-2.5 right-2 h-6 w-6 rounded-md items-center justify-center transition-all opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 flex ${
+                              sessionId === s.id ? "text-white/40 hover:bg-white/10 hover:text-white" : "text-slate-400"
+                            }`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))
                       )}
                     </div>
                   </motion.div>
-                ))
-              )}
-              <div ref={chatEndRef} />
-            </div>
+                )}
+              </AnimatePresence>
 
-            {/* Chat input */}
-            <div className="p-3 border-t border-slate-100 shrink-0">
-              <div className="vault-chat-input flex items-center gap-2 px-3 py-2">
-                <textarea
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendChat();
-                    }
-                  }}
-                  placeholder="Ask about your documents..."
-                  className="flex-1 resize-none border-none focus:ring-0 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 outline-none min-h-[24px] max-h-24"
-                  rows={1}
-                />
-                <Button
-                  onClick={handleSendChat}
-                  disabled={!chatInput.trim()}
-                  size="sm"
-                  className="h-7 w-7 p-0 bg-slate-900 hover:bg-black text-white rounded-lg disabled:opacity-30 cursor-pointer shrink-0"
-                >
-                  <ArrowUp className="h-3.5 w-3.5" />
-                </Button>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+                {chatMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center px-4">
+                    <div className="h-12 w-12 bg-slate-50 rounded-2xl flex items-center justify-center mb-4">
+                      <Sparkles className="h-6 w-6 text-slate-300" />
+                    </div>
+                    <h4 className="text-[15px] font-bold text-slate-900 mb-1">Knowledge Assistant</h4>
+                    <p className="text-[13px] text-slate-400 max-w-[240px]">Search your vault for specific legal precedents or statutory rules.</p>
+                  </div>
+                ) : (
+                  chatMessages.map((msg, i) => (
+                    <motion.div key={msg.id || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                      <div className={`max-w-[90%] rounded-2xl p-4 text-[14px] leading-relaxed shadow-sm border ${msg.role === "user" ? "bg-slate-900 text-white border-slate-800" : "bg-white text-slate-800 border-slate-100"}`}>
+                        {msg.role === "assistant" && msg.content === "" ? (
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                            <span className="text-slate-400 italic">Thinking...</span>
+                          </div>
+                        ) : (
+                          <div className="markdown-content">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                              p: (props) => <p className="mb-3 last:mb-0" {...props} />,
+                              h1: (props) => <h1 className="text-lg font-bold mt-4 mb-2" {...props} />,
+                              h2: (props) => <h2 className="text-base font-bold mt-3 mb-2" {...props} />,
+                              ul: (props) => <ul className="list-disc pl-4 mb-3 space-y-1" {...props} />,
+                              li: (props) => <li className="pl-1" {...props} />,
+                              strong: (props) => <strong className="font-bold text-slate-950" {...props} />,
+                            }}>
+                              {msg.content}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Input */}
+              <div className="p-4 border-t border-slate-100 bg-white shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)]">
+                <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus-within:bg-white focus-within:border-slate-200 focus-within:ring-4 focus-within:ring-slate-900/5 transition-all">
+                  <textarea
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendChat(); } }}
+                    placeholder="Search vault..."
+                    className="flex-1 bg-transparent border-none focus:ring-0 text-[14px] text-slate-800 placeholder:text-slate-400 outline-none resize-none min-h-[24px] max-h-32"
+                    rows={1}
+                  />
+                  <button onClick={handleSendChat} disabled={!chatInput.trim() || isSubmitting} className="h-8 w-8 bg-slate-900 hover:bg-black text-white rounded-xl flex items-center justify-center disabled:opacity-20 transition-all cursor-pointer shadow-lg shadow-slate-200">
+                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </main>
 
-      {/* Delete Vault Confirmation */}
+      {/* Delete Confirmation */}
       <AnimatePresence>
         {showDeleteVault && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
-            onClick={() => setShowDeleteVault(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm p-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 bg-red-50 rounded-xl flex items-center justify-center">
-                  <AlertTriangle className="h-5 w-5 text-red-500" />
-                </div>
-                <div>
-                  <h3 className="text-[15px] font-semibold text-slate-900">
-                    Delete Vault
-                  </h3>
-                  <p className="text-[12px] text-slate-500">
-                    This action cannot be undone
-                  </p>
-                </div>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowDeleteVault(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-3xl p-8 max-w-sm w-full relative z-10 shadow-2xl border border-slate-100">
+              <div className="h-14 w-14 bg-red-50 rounded-2xl flex items-center justify-center mb-6">
+                <AlertTriangle className="h-7 w-7 text-red-500" />
               </div>
-              <p className="text-[13px] text-slate-600 mb-6">
-                All documents, embeddings, and analysis data in{" "}
-                <strong>{vault.name}</strong> will be permanently deleted.
-              </p>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowDeleteVault(false)}
-                  className="h-9 px-4 text-[13px] cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleDeleteVault}
-                  className="h-9 px-4 text-[13px] bg-red-600 hover:bg-red-700 text-white cursor-pointer"
-                >
-                  Delete Vault
-                </Button>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Vault?</h3>
+              <p className="text-slate-500 text-[14px] leading-relaxed mb-8">This will permanently remove all documents and embeddings in <strong>{vault.name}</strong>. This action is irreversible.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Button variant="outline" onClick={() => setShowDeleteVault(false)} className="rounded-xl h-12 font-bold cursor-pointer">Cancel</Button>
+                <Button onClick={handleDeleteVault} className="bg-red-600 hover:bg-red-700 text-white rounded-xl h-12 font-bold cursor-pointer">Delete</Button>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function VaultDetailPage() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <VaultDetailContent />
+    </Suspense>
   );
 }

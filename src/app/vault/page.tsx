@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { LoadingScreen } from "@/components/ui/loading-screen";
 
 interface VaultData {
   id: string;
@@ -153,15 +154,7 @@ export default function VaultPage() {
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
           <AnimatePresence mode="wait">
             {loading ? (
-              <motion.div
-                key="loading"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center justify-center h-64"
-              >
-                <Loader2 className="h-6 w-6 text-slate-400 animate-spin" />
-              </motion.div>
+              <LoadingScreen />
             ) : vaults.length === 0 ? (
               <motion.div
                 key="empty"

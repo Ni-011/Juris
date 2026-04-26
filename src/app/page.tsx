@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AppSidebar } from '@/components/app-sidebar';
 import {
   Plus,
@@ -16,12 +17,16 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  ChevronRight,
+  History,
+  Share2,
   ExternalLink,
   BookOpen,
   Scale,
   Copy,
   Check,
-  ChevronRight
+  Trash2,
+  X
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -229,7 +234,9 @@ const ThinkingBlock = ({
   );
 };
 
-export default function Home() {
+import { Suspense } from 'react';
+
+function HomeContent() {
   const [files, setFiles] = React.useState<{ name: string, type: string }[]>([]);
   const [isDragging, setIsDragging] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -253,13 +260,107 @@ export default function Home() {
   const [currentReasoning, setCurrentReasoning] = React.useState<string>("");
   const [expandedThinking, setExpandedThinking] = React.useState<Record<string, boolean>>({});
 
+  // Sessions & History
+  const [sessionId, setSessionId] = React.useState<string | null>(null);
+  const [sessions, setSessions] = React.useState<any[]>([]);
+  const [showHistory, setShowHistory] = React.useState(false);
+  const [isPublic, setIsPublic] = React.useState(false);
+  const [shareToken, setShareToken] = React.useState<string | null>(null);
+  const [isCopiedShare, setIsCopiedShare] = React.useState(false);
+
+  const searchParams = useSearchParams();
+  const sessionParam = searchParams.get('session');
+
   React.useEffect(() => {
     setIsMounted(true);
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
+    fetchSessions();
+    
+    if (sessionParam) {
+      loadSession(sessionParam);
+    }
+    
     return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  }, [sessionParam]);
+
+  const fetchSessions = async () => {
+    try {
+      const res = await fetch('/api/chat/sessions');
+      const data = await res.json();
+      if (data.sessions) setSessions(data.sessions);
+    } catch (e) {
+      console.error("Failed to fetch sessions:", e);
+    }
+  };
+
+  const loadSession = async (sId: string) => {
+    try {
+      setIsLoading(true);
+      const res = await fetch(`/api/chat/sessions/${sId}`);
+      const data = await res.json();
+      if (data.session) {
+        setSessionId(data.session.id);
+        setMessages(data.messages || []);
+        setIsPublic(data.session.isPublic);
+        setShareToken(data.session.shareToken);
+        setShowHistory(false);
+      }
+    } catch (e) {
+      console.error("Failed to load session:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleNewChat = () => {
+    setSessionId(null);
+    setMessages([]);
+    setIsPublic(false);
+    setShareToken(null);
+    setInput("");
+  };
+
+  const toggleShare = async () => {
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/chat/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: !isPublic }),
+      });
+      const data = await res.json();
+      if (data.session) {
+        setIsPublic(data.session.isPublic);
+        setShareToken(data.session.shareToken);
+      }
+    } catch (e) {
+      console.error("Failed to toggle share:", e);
+    }
+  };
+
+  const deleteSession = async (sId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this research?")) return;
+    try {
+      const res = await fetch(`/api/chat/sessions/${sId}`, { method: "DELETE" });
+      if (res.ok) {
+        setSessions(prev => prev.filter(s => s.id !== sId));
+        if (sessionId === sId) handleNewChat();
+      }
+    } catch (e) {
+      console.error("Failed to delete session:", e);
+    }
+  };
+
+  const copyShareLink = () => {
+    if (!shareToken) return;
+    const url = `${window.location.origin}/share/${shareToken}`;
+    navigator.clipboard.writeText(url);
+    setIsCopiedShare(true);
+    setTimeout(() => setIsCopiedShare(false), 2000);
+  };
 
   React.useEffect(() => {
     const handleClickOutside = () => {
@@ -401,6 +502,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          sessionId: sessionId,
           messages: requestMessages,
           isResearch: isResearchEnabled,
           attachments: fileAttachments
@@ -408,6 +510,14 @@ export default function Home() {
       });
 
       if (!response.ok) throw new Error(response.statusText);
+
+      // Get session ID from header if it was newly created
+      const newSessionId = response.headers.get("X-Session-Id");
+      if (newSessionId && !sessionId) {
+        setSessionId(newSessionId);
+        fetchSessions();
+      }
+      
       setIsResearchEnabled(false);
 
       const reader = response.body?.getReader();
@@ -425,7 +535,7 @@ export default function Home() {
           buffer = lines.pop() || "";
 
           for (const line of lines) {
-            if (!line.trim()) continue;
+            if (!line.trim() || line.startsWith(':')) continue;
             try {
               const data = JSON.parse(line);
 
@@ -794,7 +904,34 @@ export default function Home() {
                 <span className="text-[13px] font-bold text-slate-900 truncate">Legal Research Assistant</span>
               </div>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowHistory(!showHistory)}
+                className={`h-9 w-9 rounded-lg transition-all ${showHistory ? "bg-slate-100 text-slate-900" : "text-slate-400"}`}
+              >
+                {showHistory ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleNewChat}
+                className="h-9 w-9 text-slate-400 hover:text-slate-900 rounded-lg"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              {sessionId && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleShare}
+                  className={`h-9 w-9 rounded-lg transition-all ${isPublic ? "text-amber-600 bg-amber-50" : "text-slate-400"}`}
+                >
+                  <Share2 className="h-4 w-4" />
+                </Button>
+              )}
+              <div className="h-4 w-[1px] bg-slate-200 mx-1 hidden sm:block" />
               <Button
                 variant="ghost"
                 size="sm"
@@ -806,6 +943,67 @@ export default function Home() {
               <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[11px] font-bold text-white font-serif shadow-sm">J</div>
             </div>
           </div>
+
+          {/* History Overlay */}
+          <AnimatePresence>
+            {showHistory && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[200] bg-white flex flex-col"
+              >
+                <div className="h-14 border-b border-slate-100 flex items-center justify-between px-6 bg-white/80 backdrop-blur-md sticky top-0 z-10">
+                  <h4 className="text-[13px] font-bold text-slate-900 flex items-center gap-2">
+                    <History className="h-4 w-4 text-slate-400" />
+                    Research History
+                  </h4>
+                  <button
+                    onClick={() => setShowHistory(false)}
+                    className="h-8 w-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-900 flex items-center justify-center transition-all cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 custom-scrollbar space-y-2">
+                  {sessions.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                      <MessageSquare className="h-10 w-10 opacity-10 mb-2" />
+                      <p className="text-[12px]">No previous sessions found</p>
+                    </div>
+                  ) : (
+                    sessions.filter(s => !s.vaultId).map((s) => (
+                      <div key={s.id} className="relative group">
+                        <button
+                          onClick={() => loadSession(s.id)}
+                          className={`w-full text-left p-3 rounded-2xl transition-all cursor-pointer group ${
+                            sessionId === s.id ? "bg-slate-900 text-white shadow-lg shadow-slate-200" : "hover:bg-slate-50 text-slate-700 border border-transparent hover:border-slate-100"
+                          }`}
+                        >
+                          <p className="text-[13px] font-bold truncate leading-tight mb-1 pr-6">{s.title || "New Research"}</p>
+                          <div className="flex items-center gap-3 opacity-60">
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              <span className="text-[10px] font-bold uppercase tracking-tighter">{new Date(s.updatedAt).toLocaleDateString()}</span>
+                            </div>
+                            {s.isPublic && <Share2 className="h-3 w-3 text-amber-500" />}
+                          </div>
+                        </button>
+                        <button
+                          onClick={(e) => deleteSession(s.id, e)}
+                          className={`absolute top-3 right-3 h-7 w-7 rounded-lg items-center justify-center transition-all opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 flex ${
+                            sessionId === s.id ? "text-white/40 hover:bg-white/10 hover:text-white" : "text-slate-400"
+                          }`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div
             className="flex-1 flex flex-col relative w-full overflow-hidden bg-white"
@@ -835,6 +1033,34 @@ export default function Home() {
                       <p className="text-slate-500 text-sm px-4">Drag and drop documents to analyze them</p>
                     </div>
                   </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Share link banner */}
+            <AnimatePresence>
+              {isPublic && shareToken && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="bg-amber-50 border-b border-amber-100 shrink-0 z-30"
+                >
+                  <div className="max-w-3xl mx-auto px-6 py-2.5 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="h-6 w-6 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
+                        <ExternalLink className="h-3 w-3 text-amber-700" />
+                      </div>
+                      <span className="text-[12px] font-bold text-amber-900 truncate tracking-tight">Public link is active</span>
+                    </div>
+                    <button
+                      onClick={copyShareLink}
+                      className="h-8 px-4 rounded-xl bg-white border border-amber-200 text-[11px] font-bold text-amber-700 hover:bg-amber-100 transition-all cursor-pointer flex items-center gap-2 shrink-0 shadow-sm"
+                    >
+                      {isCopiedShare ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {isCopiedShare ? "Copied" : "Copy Share Link"}
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1061,5 +1287,13 @@ export default function Home() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="flex h-screen w-full bg-white items-center justify-center" />}>
+      <HomeContent />
+    </Suspense>
   );
 }

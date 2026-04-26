@@ -8,6 +8,7 @@ import {
   integer,
   timestamp,
   jsonb,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────
@@ -77,8 +78,12 @@ export const bulkAnalysisStatusEnum = pgEnum("bulk_analysis_status", [
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  fullName: text("full_name"),
+  authId: text("auth_id").notNull().unique(),
+  fullName: text("full_name").notNull(),
+  email: text("email").notNull().unique(),
   phone: varchar("phone", { length: 256 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const vaults = pgTable("vaults", {
@@ -193,6 +198,29 @@ export const bulkAnalysisJobs = pgTable("bulk_analysis_jobs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const chatSessions = pgTable("chat_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tenantId: text("tenant_id").notNull().default("default"),
+  title: text("title").notNull().default("New Chat"),
+  vaultId: uuid("vault_id").references(() => vaults.id, { onDelete: "cascade" }),
+  shareToken: text("share_token").unique(),
+  isPublic: boolean("is_public").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const chatMessages = pgTable("chat_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => chatSessions.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().default("default"),
+  role: text("role").notNull(), // 'user' | 'assistant' | 'system'
+  content: text("content").notNull(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ─── Type exports ────────────────────────────────────────
 
 export type Vault = typeof vaults.$inferSelect;
@@ -207,3 +235,7 @@ export type AnalysisJob = typeof analysisJobs.$inferSelect;
 export type NewAnalysisJob = typeof analysisJobs.$inferInsert;
 export type BulkAnalysisJob = typeof bulkAnalysisJobs.$inferSelect;
 export type NewBulkAnalysisJob = typeof bulkAnalysisJobs.$inferInsert;
+export type ChatSession = typeof chatSessions.$inferSelect;
+export type NewChatSession = typeof chatSessions.$inferInsert;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type NewChatMessage = typeof chatMessages.$inferInsert;

@@ -41,6 +41,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
+import { LoadingScreen } from "@/components/ui/loading-screen"
 
 const LITIGATION_TYPES = [
     { id: 'legal-notice', title: "Legal Notice", icon: SendHorizontal },
@@ -181,12 +182,9 @@ export default function DraftPage() {
     return (
         <div className="flex h-dvh w-full bg-white font-sans text-slate-900 overflow-hidden relative">
             {isGenerating && (
-                <div className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center shadow-2xl transition-all animate-in fade-in">
-                    <div className="max-w-md w-full bg-white ring-1 ring-slate-100 shadow-[0_0_80px_-20px_rgba(0,0,0,0.1)] rounded-[2rem] p-8 md:p-10 flex flex-col items-center">
-                        <div className="h-16 w-16 bg-slate-900 shadow-xl rounded-2xl flex items-center justify-center mb-6">
-                            <Loader2 className="h-8 w-8 text-white animate-spin" />
-                        </div>
-                        <h3 className="text-2xl font-serif font-bold text-slate-900 mb-2">Juris is drafting</h3>
+                <div className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center transition-all animate-in fade-in">
+                    <LoadingScreen />
+                    <div className="mt-48 max-w-md w-full bg-white ring-1 ring-slate-100 shadow-[0_0_80px_-20px_rgba(0,0,0,0.1)] rounded-[2rem] p-8 md:p-10 flex flex-col items-center z-10 relative">
                         <div className="bg-slate-50 px-4 py-2 rounded-full mb-6">
                             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{generationStatus}</span>
                         </div>

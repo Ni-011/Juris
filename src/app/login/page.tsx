@@ -8,6 +8,8 @@ import {
   Scale,
   Sparkles,
   Shield,
+  AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,14 +18,31 @@ import { login, signup } from "./actions";
 export default function LoginPage() {
   const [isSignUp, setIsSignUp] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [globalError, setGlobalError] = React.useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
   const handleSubmit = async (formData: FormData) => {
     setLoading(true);
+    setErrors({});
+    setGlobalError(null);
+    setSuccessMessage(null);
+
     const result = isSignUp ? await signup(formData) : await login(formData);
-    if (result?.error) {
-      alert(result.error);
-      setLoading(false);
+
+    setLoading(false);
+
+    if (result?.errors) {
+      setErrors(result.errors);
     }
+  };
+
+  const clearError = (field: string) => {
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[field];
+      return newErrors;
+    });
   };
 
   return (
@@ -31,7 +50,6 @@ export default function LoginPage() {
 
       {/* ─── Left Panel: Brand & Visual ─── */}
       <div className="hidden lg:flex lg:w-[50%] relative overflow-hidden bg-black">
-
         {/* Radial glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-white/[0.03] blur-[120px]" />
 
@@ -171,10 +189,10 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ─── Right Panel: Auth Form (Clerk-style) ─── */}
+      {/* ─── Right Panel: Auth Form ─── */}
       <div className="w-full lg:w-[50%] flex flex-col items-center justify-center bg-[#fbfbfb] relative overflow-y-auto">
 
-        {/* Mobile logo — only on small screens */}
+        {/* Mobile logo */}
         <div className="lg:hidden flex items-center gap-2.5 absolute top-6 left-6">
           <div className="h-8 w-8 bg-[#0f172a] rounded-lg flex items-center justify-center">
             <Scale className="h-4 w-4 text-white" />
@@ -192,6 +210,7 @@ export default function LoginPage() {
         >
           {/* Main Auth Card */}
           <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-10 sm:p-14">
+
             {/* Heading */}
             <div className="mb-8">
               <h2 className="text-2xl font-serif font-bold text-[#0f172a] tracking-tight">
@@ -203,6 +222,20 @@ export default function LoginPage() {
                   : "Welcome back. Please enter your details."}
               </p>
             </div>
+
+            {/* Global Error/Success Messages */}
+            {globalError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-700 text-sm">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{globalError}</span>
+              </div>
+            )}
+            {successMessage && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-700 text-sm">
+                <CheckCircle className="h-4 w-4 shrink-0" />
+                <span>{successMessage}</span>
+              </div>
+            )}
 
             {/* Social Auth */}
             <div className="grid grid-cols-2 gap-4">
@@ -238,43 +271,117 @@ export default function LoginPage() {
             </div>
 
             {/* Email/Password Form */}
-            <form action={handleSubmit} className="space-y-6">
-              <div className="space-y-3">
-                <label className="text-[12px] font-bold text-slate-700 uppercase tracking-widest ml-1">Work Email</label>
+            <form action={handleSubmit} className="space-y-5">
+
+              {/* Full Name (Sign Up only) */}
+              {isSignUp && (
+                <div className="space-y-1.5">
+                  <label className="text-[12px] font-bold text-slate-700 uppercase tracking-widest ml-1">
+                    Full Name
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      name="fullName"
+                      placeholder="Jane Doe"
+                      className={`h-12 border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-slate-900/5 focus:border-[#0f172a] transition-all text-[15px] rounded-xl placeholder:text-slate-400 ${errors.fullName ? "border-red-400 focus:border-red-500 focus:ring-red-500/10" : ""}`}
+                      required
+                      onChange={() => clearError("fullName")}
+                    />
+                  </div>
+                  {errors.fullName && (
+                    <p className="text-xs text-red-600 ml-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.fullName}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Email */}
+              <div className="space-y-1.5">
+                <label className="text-[12px] font-bold text-slate-700 uppercase tracking-widest ml-1">
+                  Work Email
+                </label>
                 <Input
                   type="email"
                   name="email"
                   placeholder="name@firm.com"
-                  className="h-12 border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-slate-900/5 focus:border-[#0f172a] transition-all text-[15px] rounded-xl placeholder:text-slate-400"
+                  className={`h-12 border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-slate-900/5 focus:border-[#0f172a] transition-all text-[15px] rounded-xl placeholder:text-slate-400 ${errors.email ? "border-red-400 focus:border-red-500 focus:ring-red-500/10" : ""}`}
                   required
+                  onChange={() => clearError("email")}
                 />
+                {errors.email && (
+                  <p className="text-xs text-red-600 ml-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.email}
+                  </p>
+                )}
               </div>
 
-              <div className="space-y-3">
+              {/* Password */}
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between ml-1">
-                  <label className="text-[12px] font-bold text-slate-700 uppercase tracking-widest">Password</label>
-                  {!isSignUp && (
-                    <Link
-                      href="#"
-                      className="text-[12px] font-bold text-slate-400 hover:text-[#0f172a] transition-colors uppercase tracking-tight"
-                    >
-                      Forgot?
-                    </Link>
-                  )}
+                  <label className="text-[12px] font-bold text-slate-700 uppercase tracking-widest">
+                    Password
+                  </label>
+              {!isSignUp && (
+                <Link
+                  href="/forgot-password"
+                  className="text-[12px] font-bold text-slate-400 hover:text-[#0f172a] transition-colors uppercase tracking-tight"
+                >
+                  Forgot?
+                </Link>
+              )}
                 </div>
                 <Input
                   type="password"
                   name="password"
                   placeholder="••••••••"
-                  className="h-12 border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-slate-900/5 focus:border-[#0f172a] transition-all text-[15px] rounded-xl placeholder:text-slate-400"
+                  className={`h-12 border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-slate-900/5 focus:border-[#0f172a] transition-all text-[15px] rounded-xl placeholder:text-slate-400 ${errors.password ? "border-red-400 focus:border-red-500 focus:ring-red-500/10" : ""}`}
                   required
+                  onChange={() => clearError("password")}
                 />
+                {errors.password && (
+                  <p className="text-xs text-red-600 ml-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.password}
+                  </p>
+                )}
+                {isSignUp && (
+                  <p className="text-[11px] text-slate-400 ml-1">
+                    Must be at least 8 characters
+                  </p>
+                )}
               </div>
+
+              {/* Confirm Password (Sign Up only) */}
+              {isSignUp && (
+                <div className="space-y-1.5">
+                  <label className="text-[12px] font-bold text-slate-700 uppercase tracking-widest ml-1">
+                    Confirm Password
+                  </label>
+                  <Input
+                    type="password"
+                    name="confirmPassword"
+                    placeholder="••••••••"
+                    className={`h-12 border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-slate-900/5 focus:border-[#0f172a] transition-all text-[15px] rounded-xl placeholder:text-slate-400 ${errors.confirmPassword ? "border-red-400 focus:border-red-500 focus:ring-red-500/10" : ""}`}
+                    required
+                    onChange={() => clearError("confirmPassword")}
+                  />
+                  {errors.confirmPassword && (
+                    <p className="text-xs text-red-600 ml-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {errors.confirmPassword}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 bg-[#0f172a] hover:bg-black text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-900/10 active:scale-[0.98] cursor-pointer text-base mt-2"
+                className="w-full h-12 bg-[#0f172a] hover:bg-black text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-900/10 active:scale-[0.98] cursor-pointer text-base mt-4"
               >
                 {loading ? (
                   <div className="flex items-center gap-2">
@@ -294,7 +401,13 @@ export default function LoginPage() {
             {/* Toggle */}
             <div className="mt-8 text-center">
               <button
-                onClick={() => setIsSignUp(!isSignUp)}
+                type="button"
+                onClick={() => {
+                  setIsSignUp(!isSignUp);
+                  setErrors({});
+                  setGlobalError(null);
+                  setSuccessMessage(null);
+                }}
                 className="text-sm text-slate-500 hover:text-[#0f172a] transition-colors cursor-pointer group font-medium"
               >
                 {isSignUp ? (
