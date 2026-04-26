@@ -55,7 +55,7 @@ const processMarkdownContent = (content: string) => {
 // Robust copy-to-clipboard utility with fallback for non-secure contexts
 const copyToClipboard = async (text: string) => {
   if (typeof window === 'undefined') return false;
-  
+
   // Try modern Clipboard API first
   if (navigator.clipboard && navigator.clipboard.writeText) {
     try {
@@ -70,17 +70,17 @@ const copyToClipboard = async (text: string) => {
   try {
     const textArea = document.createElement("textarea");
     textArea.value = text;
-    
+
     // Ensure it's not visible or affecting layout
     textArea.style.position = "fixed";
     textArea.style.left = "-9999px";
     textArea.style.top = "0";
     textArea.style.opacity = "0";
-    
+
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
-    
+
     const successful = document.execCommand('copy');
     document.body.removeChild(textArea);
     return successful;
@@ -99,13 +99,13 @@ const ThinkingBlock = ({
   setExpandedThinking
 }: any) => {
   const scrollRef = React.useRef<HTMLDivElement>(null);
-  
+
   const isCurrentlyThinking = isLoading && msg.content === '' && (currentReasoning || currentStatus);
   const savedReasoning = msg.metadata?.reasoning;
   const isStreamingWithThought = isLoading && msg.content !== '' && currentReasoning;
-  
+
   if (!isCurrentlyThinking && !savedReasoning && !isStreamingWithThought) return null;
-  
+
   const reasoningText = savedReasoning || currentReasoning;
   const isExpanded = expandedThinking[msg.id] ?? isCurrentlyThinking ?? isStreamingWithThought;
   const isLive = isLoading && (msg.content === '' || isStreamingWithThought);
@@ -193,7 +193,7 @@ const ThinkingBlock = ({
                 transition={{ duration: 0.25, ease: 'easeOut' }}
               >
                 <div className="px-4 pb-3 border-t border-slate-100">
-                  <div 
+                  <div
                     ref={scrollRef}
                     className={`text-[13px] leading-relaxed text-slate-500 font-sans pt-3 break-words ${isLive ? 'max-h-[300px]' : 'max-h-[400px]'} overflow-y-auto custom-scrollbar`}
                   >
@@ -201,14 +201,14 @@ const ThinkingBlock = ({
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
-                          h1: ({children}) => <strong className="text-slate-700 block mt-3 mb-1 text-[14px]">{children}</strong>,
-                          h2: ({children}) => <strong className="text-slate-700 block mt-3 mb-1 text-[13px]">{children}</strong>,
-                          h3: ({children}) => <strong className="text-slate-700 block mt-2 mb-1 text-[13px]">{children}</strong>,
-                          ul: ({children}) => <ul className="list-disc ml-5 mb-2">{children}</ul>,
-                          ol: ({children}) => <ol className="list-decimal ml-5 mb-2">{children}</ol>,
-                          li: ({children}) => <li className="mb-0.5">{children}</li>,
-                          p: ({children}) => <p className="mb-2 last:mb-0 inline">{children} </p>,
-                          strong: ({children}) => <strong className="font-semibold text-slate-700">{children}</strong>,
+                          h1: ({ children }) => <strong className="text-slate-700 block mt-3 mb-1 text-[14px]">{children}</strong>,
+                          h2: ({ children }) => <strong className="text-slate-700 block mt-3 mb-1 text-[13px]">{children}</strong>,
+                          h3: ({ children }) => <strong className="text-slate-700 block mt-2 mb-1 text-[13px]">{children}</strong>,
+                          ul: ({ children }) => <ul className="list-disc ml-5 mb-2">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal ml-5 mb-2">{children}</ol>,
+                          li: ({ children }) => <li className="mb-0.5">{children}</li>,
+                          p: ({ children }) => <p className="mb-2 last:mb-0 inline">{children} </p>,
+                          strong: ({ children }) => <strong className="font-semibold text-slate-700">{children}</strong>,
                         }}
                       >
                         {reasoningText}
@@ -277,11 +277,11 @@ function HomeContent() {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     fetchSessions();
-    
+
     if (sessionParam) {
       loadSession(sessionParam);
     }
-    
+
     return () => window.removeEventListener('resize', checkMobile);
   }, [sessionParam]);
 
@@ -517,7 +517,7 @@ function HomeContent() {
         setSessionId(newSessionId);
         fetchSessions();
       }
-      
+
       setIsResearchEnabled(false);
 
       const reader = response.body?.getReader();
@@ -738,16 +738,18 @@ function HomeContent() {
               }
             }}
             className={cn(
-               "px-4 py-3 rounded-2xl text-[15px] leading-relaxed transition-all relative",
-               msg.role === 'user' 
-                ? "max-w-[90%] bg-slate-100 text-slate-900 rounded-br-sm hover:bg-slate-200/80 active:scale-[0.99] cursor-pointer shadow-sm" 
+              "px-4 py-3 rounded-2xl text-[15px] leading-relaxed transition-all relative",
+              msg.role === 'user'
+                ? "max-w-[90%] bg-slate-100 text-slate-900 rounded-br-sm hover:bg-slate-200/80 active:scale-[0.99] cursor-pointer shadow-sm"
                 : "max-w-[95%] bg-slate-50/50 border border-slate-100/50 text-slate-800 rounded-bl-sm"
             )}
           >
             {msg.role === 'assistant' && (
               <div className="flex items-center justify-between mb-3">
                 <div className="font-bold text-slate-900 flex items-center gap-2">
-                  <div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white font-serif text-[10px]">J</div>
+                  <div className="h-5 w-5 bg-slate-900 rounded flex items-center justify-center text-white shadow-lg shadow-slate-200">
+                    <Sparkles className="h-3 w-3" />
+                  </div>
                   Juris
                 </div>
                 {!isLoading && (
@@ -771,7 +773,7 @@ function HomeContent() {
                 )}
               </div>
             )}
-            
+
             <div className="markdown-prose text-inherit">
               {msg.role === 'assistant' && (
                 <ThinkingBlock
@@ -842,7 +844,7 @@ function HomeContent() {
               )}
             </div>
           </div>
-          
+
           <AnimatePresence mode="wait">
             {copyingId === msg.id && msg.role === 'user' && !isCopied && (
               <motion.div
@@ -931,16 +933,6 @@ function HomeContent() {
                   <Share2 className="h-4 w-4" />
                 </Button>
               )}
-              <div className="h-4 w-[1px] bg-slate-200 mx-1 hidden sm:block" />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setMessages([])}
-                className="h-9 w-9 p-0 text-slate-400 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-all cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-              <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[11px] font-bold text-white font-serif shadow-sm">J</div>
             </div>
           </div>
 
@@ -976,9 +968,8 @@ function HomeContent() {
                       <div key={s.id} className="relative group">
                         <button
                           onClick={() => loadSession(s.id)}
-                          className={`w-full text-left p-3 rounded-2xl transition-all cursor-pointer group ${
-                            sessionId === s.id ? "bg-slate-900 text-white shadow-lg shadow-slate-200" : "hover:bg-slate-50 text-slate-700 border border-transparent hover:border-slate-100"
-                          }`}
+                          className={`w-full text-left p-3 rounded-2xl transition-all cursor-pointer group ${sessionId === s.id ? "bg-slate-900 text-white shadow-lg shadow-slate-200" : "hover:bg-slate-50 text-slate-700 border border-transparent hover:border-slate-100"
+                            }`}
                         >
                           <p className="text-[13px] font-bold truncate leading-tight mb-1 pr-6">{s.title || "New Research"}</p>
                           <div className="flex items-center gap-3 opacity-60">
@@ -991,9 +982,8 @@ function HomeContent() {
                         </button>
                         <button
                           onClick={(e) => deleteSession(s.id, e)}
-                          className={`absolute top-3 right-3 h-7 w-7 rounded-lg items-center justify-center transition-all opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 flex ${
-                            sessionId === s.id ? "text-white/40 hover:bg-white/10 hover:text-white" : "text-slate-400"
-                          }`}
+                          className={`absolute top-3 right-3 h-7 w-7 rounded-lg items-center justify-center transition-all opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 flex ${sessionId === s.id ? "text-white/40 hover:bg-white/10 hover:text-white" : "text-slate-400"
+                            }`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>

@@ -15,18 +15,18 @@ export function LoadingScreen() {
         >
           {/* Subtle Outer Pulse */}
           <motion.div
-            animate={{ 
+            animate={{
               scale: [1, 1.15, 1],
               opacity: [0.1, 0.2, 0.1]
             }}
-            transition={{ 
-              duration: 2, 
-              repeat: Infinity, 
-              ease: "easeInOut" 
+            transition={{
+              duration: 2,
+              repeat: Infinity,
+              ease: "easeInOut"
             }}
             className="absolute inset-0 bg-slate-900 rounded-2xl blur-xl"
           />
-          
+
           <div className="h-16 w-16 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-serif font-bold text-2xl relative z-10 shadow-2xl shadow-slate-200">
             J
           </div>
@@ -34,7 +34,7 @@ export function LoadingScreen() {
 
         {/* Minimal Text Status */}
         <div className="flex flex-col items-center gap-1">
-          <motion.h2 
+          <motion.h2
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
@@ -42,7 +42,7 @@ export function LoadingScreen() {
           >
             Juris
           </motion.h2>
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
@@ -68,13 +68,13 @@ export function LoadingScreen() {
       {/* Very subtle progress bar at the bottom for feel */}
       <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-50 overflow-hidden">
         <motion.div
-          animate={{ 
+          animate={{
             x: ["-100%", "100%"]
           }}
-          transition={{ 
-            duration: 3, 
-            repeat: Infinity, 
-            ease: "easeInOut" 
+          transition={{
+            duration: 3,
+            repeat: Infinity,
+            ease: "easeInOut"
           }}
           className="h-full w-1/3 bg-slate-900/10 rounded-full"
         />

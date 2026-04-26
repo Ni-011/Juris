@@ -325,14 +325,14 @@ export default function LoginPage() {
                   <label className="text-[12px] font-bold text-slate-700 uppercase tracking-widest">
                     Password
                   </label>
-              {!isSignUp && (
-                <Link
-                  href="/forgot-password"
-                  className="text-[12px] font-bold text-slate-400 hover:text-[#0f172a] transition-colors uppercase tracking-tight"
-                >
-                  Forgot?
-                </Link>
-              )}
+                  {!isSignUp && (
+                    <Link
+                      href="/forgot-password"
+                      className="text-[12px] font-bold text-slate-400 hover:text-[#0f172a] transition-colors uppercase tracking-tight"
+                    >
+                      Forgot?
+                    </Link>
+                  )}
                 </div>
                 <Input
                   type="password"

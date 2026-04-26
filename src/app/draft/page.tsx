@@ -209,7 +209,6 @@ export default function DraftPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                        <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[11px] font-bold text-white font-serif shadow-sm">J</div>
                     </div>
                 </div>
 
@@ -219,8 +218,8 @@ export default function DraftPage() {
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 md:mb-14 gap-6">
                             <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-3">
-                                    <div className="h-6 w-6 bg-slate-900 rounded-md flex items-center justify-center text-white font-serif font-bold text-[10px] uppercase tracking-tighter shrink-0">
-                                        J
+                                    <div className="h-6 w-6 bg-slate-900 rounded-md flex items-center justify-center text-white shadow-lg shadow-slate-200 shrink-0">
+                                        <Sparkles className="h-3.5 w-3.5" />
                                     </div>
                                     <span className="text-[10px] md:text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Drafting Assistant</span>
                                 </div>

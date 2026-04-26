@@ -15,6 +15,7 @@ import {
   Settings,
   CreditCard,
   Bell,
+  Scale,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -36,6 +37,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 
@@ -47,6 +49,7 @@ interface VaultItem {
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { isMobile, setOpenMobile } = useSidebar();
   const [vaults, setVaults] = React.useState<VaultItem[]>([]);
   const [vaultOpen, setVaultOpen] = React.useState(true);
   const [userEmail, setUserEmail] = React.useState<string | null>(null);
@@ -64,7 +67,7 @@ export function AppSidebar() {
           if (data.profile) {
             setUserName(data.profile.fullName);
           }
-        } catch {}
+        } catch { }
       }
     });
 
@@ -77,7 +80,7 @@ export function AppSidebar() {
           );
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const handleSignOut = async () => {
@@ -90,7 +93,7 @@ export function AppSidebar() {
     if (path === "/") return pathname === "/";
     return pathname.startsWith(path);
   };
-  
+
   const navItems = [
     { title: "Assistant", icon: MessageSquare, href: "/" },
     { title: "Draft", icon: FileSignature, href: "/draft" },
@@ -106,9 +109,10 @@ export function AppSidebar() {
       <SidebarHeader className="px-4 py-4 space-y-4 group-data-[collapsible=icon]:px-2">
         <Link
           href="/"
+          onClick={() => isMobile && setOpenMobile(false)}
           className="flex items-center gap-3 justify-start group-data-[collapsible=icon]:justify-center hover:opacity-80 transition-opacity px-1"
         >
-          <div className="h-8 w-8 bg-slate-900 rounded flex items-center justify-center text-white font-serif font-bold text-sm uppercase tracking-tighter shrink-0">
+          <div className="h-8 w-8 bg-slate-900 rounded-lg flex items-center justify-center text-white font-serif font-bold text-[15px] uppercase tracking-tighter shrink-0 shadow-lg shadow-slate-200">
             J
           </div>
           <span className="text-xl font-serif font-medium tracking-tight text-slate-900 group-data-[collapsible=icon]:hidden">
@@ -123,7 +127,10 @@ export function AppSidebar() {
           <ChevronDown className="h-3.5 w-3.5 text-slate-400 group-hover:text-slate-600 transition-colors" />
         </div>
 
-        <Link href="/vault">
+        <Link
+          href="/vault"
+          onClick={() => isMobile && setOpenMobile(false)}
+        >
           <Button className="w-full justify-center gap-2 bg-white hover:bg-slate-50 text-slate-900 border border-slate-200 shadow-sm h-9 px-4 transition-all rounded-lg hover:scale-105 active:scale-95 cursor-pointer">
             <Plus className="h-3.5 w-3.5" />
             <span className="text-[13px] font-medium group-data-[collapsible=icon]:hidden">
@@ -145,21 +152,22 @@ export function AppSidebar() {
                   /* Vault item: clickable label + collapsible chevron */
                   <>
                     <div
-                      className={`peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
-                        active
+                      className={`peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${active
                           ? "bg-slate-100 text-slate-900 font-semibold"
                           : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                      }`}
+                        }`}
                     >
                       <Link
                         href="/vault"
                         className="flex items-center gap-3 flex-1 min-w-0"
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isMobile) setOpenMobile(false);
+                        }}
                       >
                         <item.icon
-                          className={`h-4 w-4 shrink-0 ${
-                            active ? "text-slate-900" : "text-slate-500"
-                          }`}
+                          className={`h-4 w-4 shrink-0 ${active ? "text-slate-900" : "text-slate-500"
+                            }`}
                         />
                         <span className="text-[13px] truncate">
                           {item.title}
@@ -173,9 +181,8 @@ export function AppSidebar() {
                         className="shrink-0 p-0.5 rounded hover:bg-slate-200/50 transition-colors"
                       >
                         <ChevronRight
-                          className={`h-3 w-3 text-slate-400 transition-transform duration-200 ${
-                            vaultOpen ? "rotate-90" : ""
-                          }`}
+                          className={`h-3 w-3 text-slate-400 transition-transform duration-200 ${vaultOpen ? "rotate-90" : ""
+                            }`}
                         />
                       </button>
                     </div>
@@ -186,11 +193,11 @@ export function AppSidebar() {
                           <Link
                             key={vault.id}
                             href={`/vault/${vault.id}`}
-                            className={`block text-[13px] py-1.5 px-2 rounded-md cursor-pointer transition-all hover:translate-x-1 ${
-                              pathname === `/vault/${vault.id}`
+                            onClick={() => isMobile && setOpenMobile(false)}
+                            className={`block text-[13px] py-1.5 px-2 rounded-md cursor-pointer transition-all hover:translate-x-1 ${pathname === `/vault/${vault.id}`
                                 ? "text-slate-900 font-medium bg-slate-50"
                                 : "text-slate-400 hover:text-slate-900 hover:bg-slate-50"
-                            }`}
+                              }`}
                           >
                             {vault.name}
                           </Link>
@@ -202,17 +209,16 @@ export function AppSidebar() {
                   /* All other items: use SidebarMenuButton with render prop for <Link> */
                   <SidebarMenuButton
                     isActive={active}
+                    onClick={() => isMobile && setOpenMobile(false)}
                     render={<Link href={item.href || "#"} />}
-                    className={`gap-3 py-2 px-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
-                      active
+                    className={`gap-3 py-2 px-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${active
                         ? "bg-slate-100 text-slate-900 font-semibold"
                         : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                    }`}
+                      }`}
                   >
                     <item.icon
-                      className={`h-4 w-4 ${
-                        active ? "text-slate-900" : "text-slate-500"
-                      }`}
+                      className={`h-4 w-4 ${active ? "text-slate-900" : "text-slate-500"
+                        }`}
                     />
                     <span className="text-[13px]">{item.title}</span>
                   </SidebarMenuButton>
@@ -222,9 +228,9 @@ export function AppSidebar() {
           })}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter className="p-4 mt-auto space-y-2 border-t border-slate-100">
-        <div className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all rounded-lg cursor-pointer">
-          <HelpCircle className="h-4 w-4 text-slate-500" />
+      <SidebarFooter className="p-4 mt-auto space-y-2 border-t border-slate-100 group-data-[collapsible=icon]:p-1">
+        <div className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all rounded-lg cursor-pointer group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
+          <HelpCircle className="h-4 w-4 text-slate-500 shrink-0" />
           <span className="text-[13px] font-medium group-data-[collapsible=icon]:hidden">
             Help & Support
           </span>
@@ -233,36 +239,40 @@ export function AppSidebar() {
         {userEmail && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <div className="flex items-center justify-between px-3 py-2 text-slate-600 hover:bg-slate-50 rounded-lg cursor-pointer transition-all group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:justify-center">
+              <div className="flex items-center justify-between px-3 py-2 text-slate-600 hover:bg-slate-50 rounded-lg cursor-pointer transition-all group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
                 <div className="flex items-center gap-3 flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                  <div className="h-7 w-7 rounded-full bg-slate-900 flex items-center justify-center shrink-0 shadow-sm border border-slate-200">
-                    <User className="h-3.5 w-3.5 text-white" />
+                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center shrink-0 shadow-md border border-white/10">
+                    <span className="text-[11px] font-bold text-white uppercase tracking-tighter">
+                      {(userName || userEmail || "U").charAt(0)}
+                    </span>
                   </div>
                   <div className="flex flex-col min-w-0">
-<span className="text-[12px] font-bold text-slate-900 truncate tracking-tight">
-                  {userName || userEmail?.split('@')[0]}
-                </span>
-                <span className="text-[10px] text-slate-400 truncate uppercase tracking-widest font-bold">
-                  Professional
-                </span>
+                    <span className="text-[12px] font-bold text-slate-900 truncate tracking-tight">
+                      {userName || userEmail?.split('@')[0]}
+                    </span>
+                    <span className="text-[10px] text-slate-400 truncate uppercase tracking-widest font-bold">
+                      Professional
+                    </span>
                   </div>
                 </div>
                 {/* Mobile/Icon mode avatar */}
-                <div className="hidden group-data-[collapsible=icon]:flex h-8 w-8 rounded-full bg-slate-900 items-center justify-center shadow-sm border border-slate-200">
-                  <User className="h-4 w-4 text-white" />
+                <div className="hidden group-data-[collapsible=icon]:flex h-8 w-8 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 items-center justify-center shadow-md border border-white/10 shrink-0">
+                  <span className="text-[11px] font-bold text-white uppercase tracking-tighter">
+                    {(userName || userEmail || "U").charAt(0)}
+                  </span>
                 </div>
                 <ChevronRight className="h-3.5 w-3.5 text-slate-300 group-data-[collapsible=icon]:hidden" />
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="right" className="w-56 rounded-xl shadow-xl border-slate-100 p-1">
               <DropdownMenuLabel className="px-2 py-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Account</DropdownMenuLabel>
-<DropdownMenuItem
-                    onClick={() => router.push("/profile")}
-                    className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors"
-                  >
-                    <User className="h-4 w-4 text-slate-500" />
-                    <span className="text-sm font-medium">Profile</span>
-                  </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => router.push("/profile")}
+                className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors"
+              >
+                <User className="h-4 w-4 text-slate-500" />
+                <span className="text-sm font-medium">Profile</span>
+              </DropdownMenuItem>
               <DropdownMenuItem className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-slate-50 transition-colors">
                 <Settings className="h-4 w-4 text-slate-500" />
                 <span className="text-sm font-medium">Settings</span>
@@ -272,7 +282,7 @@ export function AppSidebar() {
                 <span className="text-sm font-medium">Billing</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-slate-50 my-1" />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={handleSignOut}
                 className="gap-2 px-2 py-2 rounded-lg cursor-pointer focus:bg-red-50 text-red-600 transition-colors"
               >

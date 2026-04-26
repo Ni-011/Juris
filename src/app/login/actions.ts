@@ -37,7 +37,7 @@ export async function login(formData: FormData) {
     }
   }
 
-  redirect("/vault");
+  redirect("/");
 }
 
 export async function signup(formData: FormData) {
@@ -87,7 +87,7 @@ export async function signup(formData: FormData) {
     });
   }
 
-  redirect("/vault");
+  redirect("/");
 }
 
 export async function signout() {
