@@ -234,26 +234,33 @@ export function EditorMain({
                 class: 'outline-none min-h-full prose-premium whitespace-pre-wrap break-words',
             },
             handleClick(view, pos, event) {
-                const target = event.target as HTMLElement
-                const variableSpan = target.closest('span[data-variable-key]')
-                
-                if (variableSpan) {
-                    const url = variableSpan.getAttribute('data-url')
-                    const key = variableSpan.getAttribute('data-variable-key')
-                    if (url) {
-                        window.open(url, '_blank')
-                    } else {
-                        // Fallback to Indian Kanoon search for the cited text
-                        const query = variableSpan.textContent || key
-                        window.open(`https://indiankanoon.org/search/?formInput=${encodeURIComponent(query || "Indian Law")}`, '_blank')
-                    }
-                    return true
-                }
+                // Remove link-opening behavior to allow editing
                 return false
             }
         },
         onUpdate: ({ editor }) => {
-            localStorage.setItem('juris_draft_content', editor.getHTML())
+            const html = editor.getHTML()
+            if (!html || html === '<p></p>') return
+            
+            localStorage.setItem('juris_draft_content', html)
+            
+            // Extract current variables from document to sync with sidebars
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(html, 'text/html')
+            const spans = doc.querySelectorAll('span[data-variable-key]')
+            
+            const currentVars: Record<string, string> = {}
+            spans.forEach(span => {
+                const key = span.getAttribute('data-variable-key')
+                if (key) {
+                    currentVars[key] = span.textContent || ""
+                }
+            })
+
+            // Only sync if we found variables, to prevent accidental clearing during load
+            if (Object.keys(currentVars).length > 0 && (window as any).syncJurisVariables) {
+                (window as any).syncJurisVariables(currentVars)
+            }
         },
         onSelectionUpdate: ({ editor }) => {
             if (editor.isFocused) {

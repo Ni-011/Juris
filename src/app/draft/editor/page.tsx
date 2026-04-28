@@ -77,7 +77,49 @@ export default function EditorPage() {
                 localStorage.removeItem('juris_generated_draft');
             }
         }
-    }, [/* only run on mount */]);
+    }, []);
+
+    // Global sync function for the editor to call when content changes
+    React.useEffect(() => {
+        (window as any).syncJurisVariables = (currentVars: Record<string, string>) => {
+            setVariables(prev => {
+                const seenKeys = new Set(prev.map(v => v.key));
+                let changed = false;
+                
+                // Update existing
+                const next = prev.map(v => {
+                    if (currentVars[v.key] !== undefined && currentVars[v.key] !== v.value) {
+                        changed = true;
+                        return { ...v, value: currentVars[v.key] };
+                    }
+                    return v;
+                });
+
+                // Add new ones discovered in document
+                const toAdd: any[] = [];
+                Object.entries(currentVars).forEach(([key, value]) => {
+                    if (!seenKeys.has(key)) {
+                        changed = true;
+                        const label = key
+                            .replace(/_/g, ' ')
+                            .replace(/\b\w/g, l => l.toUpperCase());
+                        
+                        toAdd.push({
+                            label,
+                            key,
+                            value,
+                            placeholder: `Enter ${label}...`
+                        });
+                    }
+                });
+
+                return changed ? [...next, ...toAdd] : prev;
+            });
+        };
+        return () => {
+            delete (window as any).syncJurisVariables;
+        };
+    }, []);
 
     const handleAddField = () => {
         setIsAddModalOpen(true)

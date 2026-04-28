@@ -9,7 +9,7 @@ const nvidia = new OpenAI({
     baseURL: 'https://integrate.api.nvidia.com/v1',
 });
 
-const MODEL = 'moonshotai/kimi-k2-thinking';
+const MODEL = 'moonshotai/kimi-k2-instruct-0905';
 
 export async function POST(req: Request) {
     try {

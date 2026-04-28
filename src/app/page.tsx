@@ -104,8 +104,6 @@ const ThinkingBlock = ({
   const savedReasoning = msg.metadata?.reasoning;
   const isStreamingWithThought = isLoading && msg.content !== '' && currentReasoning;
 
-  if (!isCurrentlyThinking && !savedReasoning && !isStreamingWithThought) return null;
-
   const reasoningText = savedReasoning || currentReasoning;
   const isExpanded = expandedThinking[msg.id] ?? isCurrentlyThinking ?? isStreamingWithThought;
   const isLive = isLoading && (msg.content === '' || isStreamingWithThought);
@@ -115,6 +113,8 @@ const ThinkingBlock = ({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [reasoningText, isExpanded]);
+
+  if (!isCurrentlyThinking && !savedReasoning && !isStreamingWithThought) return null;
 
   return (
     <div className="mb-4">

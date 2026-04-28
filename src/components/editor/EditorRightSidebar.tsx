@@ -26,38 +26,38 @@ export function EditorRightSidebar({
     const [activeTab, setActiveTab] = React.useState('variables')
 
     const handleVariableChange = (key: string, newValue: string) => {
-        const oldVar = variables.find(v => v.key === key)
-        if (!oldVar || !editor) return
+        if (!editor) return
 
         const nextVars = variables.map(v => 
             v.key === key ? { ...v, value: newValue } : v
         )
         setVariables(nextVars)
 
-        if (editor) {
-            const { state, view } = editor
-            const tr = state.tr
-            const positions: { from: number, to: number }[] = []
+        const { state, view } = editor
+        const tr = state.tr
+        const positions: { from: number, to: number }[] = []
 
-            state.doc.descendants((node: any, pos: number) => {
-                if (node.type.name === 'variable' && node.nodeSize > 1) {
-                    if (node.attrs.key === key) {
-                        positions.push({ 
-                            from: pos + 1, 
-                            to: pos + node.nodeSize - 1 
-                        })
-                    }
+        state.doc.descendants((node: any, pos: number) => {
+            if (node.type.name === 'variable') {
+                if (node.attrs.key === key) {
+                    positions.push({ 
+                        from: pos + 1, 
+                        to: pos + node.nodeSize - 1 
+                    })
                 }
-            })
-
-            for (let i = positions.length - 1; i >= 0; i--) {
-                const { from, to } = positions[i]
-                tr.insertText(newValue || " ", from, to)
             }
+        })
 
-            if (tr.docChanged) {
-                view.dispatch(tr)
-            }
+        // Replace from end to start to maintain index validity
+        for (let i = positions.length - 1; i >= 0; i--) {
+            const { from, to } = positions[i]
+            // We use a zero-width space or a placeholder if empty to keep the node selectable/visible
+            // But if the user wants it truly empty, we can use ""
+            tr.insertText(newValue, from, to)
+        }
+
+        if (tr.docChanged) {
+            view.dispatch(tr)
         }
     }
 
@@ -108,13 +108,50 @@ export function EditorRightSidebar({
                                     </div>
                                 ))}
                                 
-                                <button 
-                                    onClick={onAddField}
-                                    className="w-full flex items-center justify-center gap-2 text-slate-400 hover:text-slate-950 h-10 rounded-lg transition-all cursor-pointer font-bold text-[9px] uppercase tracking-[0.25em] border border-dashed border-slate-200 hover:border-slate-300 mt-2"
-                                >
-                                    <Plus className="h-3.5 w-3.5" />
-                                    <span>Add Variable</span>
-                                </button>
+                                <div className="flex flex-col gap-2 pt-2">
+                                    <button 
+                                        onClick={() => {
+                                            if (editor && (window as any).syncJurisVariables) {
+                                                const html = editor.getHTML()
+                                                const parser = new DOMParser()
+                                                const doc = parser.parseFromString(html, 'text/html')
+                                                const spans = doc.querySelectorAll('span[data-variable-key]')
+                                                const currentVars: Record<string, string> = {}
+                                                spans.forEach((span: any) => {
+                                                    const key = span.getAttribute('data-variable-key')
+                                                    if (key) currentVars[key] = span.textContent || ""
+                                                })
+                                                
+                                                // Also scan for [Brackets]
+                                                const text = editor.getText()
+                                                const bracketMatches = [...text.matchAll(/\[([^\]]+)\]/g)]
+                                                bracketMatches.forEach(match => {
+                                                    const raw = match[1]
+                                                    const key = raw.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+                                                    if (key && !currentVars[key]) {
+                                                        currentVars[key] = match[0]
+                                                    }
+                                                })
+
+                                                if (Object.keys(currentVars).length > 0) {
+                                                    (window as any).syncJurisVariables(currentVars)
+                                                }
+                                            }
+                                        }}
+                                        className="w-full flex items-center justify-center gap-2 text-sky-600 hover:text-sky-700 h-10 rounded-lg transition-all cursor-pointer font-bold text-[9px] uppercase tracking-[0.25em] border border-sky-100 hover:bg-sky-50"
+                                    >
+                                        <LayoutList className="h-3.5 w-3.5" />
+                                        <span>Scan Document</span>
+                                    </button>
+
+                                    <button 
+                                        onClick={onAddField}
+                                        className="w-full flex items-center justify-center gap-2 text-slate-400 hover:text-slate-950 h-10 rounded-lg transition-all cursor-pointer font-bold text-[9px] uppercase tracking-[0.25em] border border-dashed border-slate-200 hover:border-slate-300"
+                                    >
+                                        <Plus className="h-3.5 w-3.5" />
+                                        <span>Add Variable</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ) : (
